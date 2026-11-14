@@ -11,7 +11,7 @@ How to check each part of the Theremin Mouse on its own, then step by step up to
 | M0 blink + hello | – | – | ☑ | – | – | – |
 | M1 composite + buttons | ☑ | – | ☑ | ☐ | – | – |
 | M2 joystick scroll | ☑ | – | ☑ | ☐ | – | – |
-| M3 optical cursor | ☑ | – | · | · | – | – |
+| M3 optical cursor | ☑ | – | ☑ | ☐ | – | – |
 | M4 IMU text | ☑ | – | · | · | – | – |
 | M5 packets + reader | ☑ | ☑ | · | – | · | – |
 | M6 hardening | – | – | – | – | – | · |
@@ -170,6 +170,26 @@ Run everything from the repo root (`src/`). Each test prints PASS, FAIL or SKIP 
   1. Sum is short: the carry is being reset somewhere in `common/carry.c`.
   2. A report exceeds 127: the clamp limits were changed.
 
+### M3-L2 scripted cursor path
+- **Goal:** clamp-and-carry, running on the Pico, delivers every count over real USB and never exceeds ±127 per report.
+- **Setup:** one-time setup done. Pico plugged in. The bench flashes SIM firmware if needed.
+- **Run:** `./bench/run.sh M3` (the five `evtest: REL_` lines; about 35 s)
+- **Do:** nothing. The cursor on your desktop does not move.
+- **Pass if:** REL_X total = 0 and REL_Y total = 0 (the square and the bursts return to the start); sum of |REL_X| = 1000 and sum of |REL_Y| = 1000; the largest single event is 100 to 127.
+- **If it fails:**
+  1. Absolute sums are 0: the firmware on the board is older than milestone 3. Run `./bench/flash.sh SIM`.
+  2. Totals are not 0: counts are being lost between the timer and the report. Look at the "put it back" code in `hid_task` in `firmware/main.c`.
+
+### M3-L3 real optical sensor
+- **Goal:** the real sensor is the expected chip, accepted its firmware, and measures distance correctly.
+- **Setup:** one-time setup done. Sensor wired to SPI0 (MISO GPIO16, CS GPIO17, SCK GPIO18, MOSI GPIO19, 3V3, GND) with wires under 10 cm. The bench flashes HW firmware. A ruler on a matt surface.
+- **Run:** `./bench/run.sh M3` in a terminal
+- **Do:** when asked, slide the sensor exactly 10 cm to the right along the ruler, then press Enter.
+- **Pass if:** Product_ID = 66 (0x42); SROM_ID = 4; CPI reads back 1600; REL_X total is 5984 to 6614 (1600 × 3.94 ±5%); REL_Y total is within ±630.
+- **If it fails:**
+  1. Product_ID is 0: nothing is answering. Check power, ground and the MISO and CS wires. The LED blinks three times, pauses, and repeats while the sensor is missing.
+  2. REL_X is negative or the movement shows up in REL_Y: the sensor is mounted rotated. Set `CFG_OPT_INVERT_X`, `CFG_OPT_INVERT_Y` or `CFG_OPT_SWAP_XY` in `firmware/config.h`.
+
 ### M4-L0 scaling and the sine model
 - **Goal:** raw counts convert to g and °/s using the datasheet numbers, and the simulated IMU follows its formula.
 - **Setup:** PC only.
@@ -208,7 +228,6 @@ These tests are defined in the spec and appear as SKIP in `run.sh`. Each gets a 
 
 | Test | Needs |
 |---|---|
-| M3-L2 scripted square path; M3-L3 sensor ID and 10 cm ruler | milestone 3 |
 | M4-L2 text printout vs sine model; M4-L3 six-face test and 90° turn | milestone 4 |
 | M5-L2 200 Hz framed stream from the Pico; L4 integration | milestone 5 |
 | M6-L5 soak, unplug/replug and reflash | milestone 6 |

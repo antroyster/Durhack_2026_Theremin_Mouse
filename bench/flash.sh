@@ -49,6 +49,7 @@ if ! picotool load -x "$UF2" > "$BUILD/flash.log" 2>&1; then
     tail -5 "$BUILD/flash.log"
     echo "[flash] picotool failed: the board was NOT flashed"; exit 1
 fi
+sha256sum "$UF2" | cut -d" " -f1 > "$ROOT/bench/.last_flashed"   # lets run.sh spot stale firmware
 have_port() { [ -n "$(find_port)" ]; }
 if wait_for 8 have_port; then
     echo "[flash] done: $(find_port)"

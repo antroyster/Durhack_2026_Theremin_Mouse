@@ -63,7 +63,10 @@
 #define CFG_PIN_OPT_CS     17
 #define CFG_PIN_OPT_SCK    18
 #define CFG_PIN_OPT_MOSI   19
-#define CFG_PIN_OPT_MOTION 20 /* active low */
+#define CFG_PIN_OPT_MOTION 20 /* active low (not used yet: the sensor is polled every tick) */
+#define CFG_OPT_SPI_BAUD   1000000u /* 1 MHz; the PMW3360 limit is 2 MHz */
+#define CFG_OPT_CPI        1600u /* counts per inch, 100..12000 in steps of 100 */
+#define CFG_OPT_PRODUCT_ID 0x42u /* PMW3360 */
 #define CFG_OPT_INVERT_X   0  /* 1: flip the sign of dx (HID: +x = right) */
 #define CFG_OPT_INVERT_Y   0  /* 1: flip the sign of dy (HID: +y = down) */
 #define CFG_OPT_SWAP_XY    0  /* 1: swap the two axes (sensor mounted rotated) */

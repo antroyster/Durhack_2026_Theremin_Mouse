@@ -324,3 +324,64 @@ Without a deadzone the count is the area under rate against time: ∫₀⁵ 20·
 
 1. In `firmware/config.h` set `CFG_SCROLL_KS` to 40, run `./bench/flash.sh SIM` and `./bench/run.sh M2`. The test should fail with about 198 up, because the prediction still uses 20. Restore it.
 2. With HW firmware and the joystick wired, run `cat` on the serial port and watch `joy raw=` while moving the stick slowly: note where scrolling starts (about 205 counts from centre).
+
+---
+
+## Milestone 3: optical sensor moves the cursor (2026-11-14)
+
+### What was built
+
+The optical sensor's counts now move the cursor. `firmware/opt_pmw3360.c` is the driver, ported from your `mucking_about/paw_3360` experiment: ID check, sensor firmware (SROM) upload, CPI setting and burst reads.
+
+### How it works
+
+```
+every 1 ms (timer interrupt):
+   burst read: NCS low, send 0x50, wait 35 us, read 6 bytes, NCS high     (about 100 us)
+   g_dx_pending += dx ; g_dy_pending += dy
+
+main loop, when the HID endpoint is free:
+   take dx, dy (interrupts off)
+   s = r + dx ; x = clamp(s, -127, 127) ; r = s - x          clamp-and-carry, per axis
+   send { buttons, x, y, wheel }
+   if the send failed: restore r and put dx, dy back
+```
+
+A fast swipe of 300 counts in one tick becomes three reports: 127, 127, 46. The sum is still 300, so the cursor ends up in the right place; it just takes 3 ms to get there.
+
+### Key lines explained
+
+| Line | File | Why it is there |
+|---|---|---|
+| `if (product_id != 0x42 \|\| (id ^ inverse) != 0xFF) return false;` | `firmware/opt_pmw3360.c` | two registers that must be bitwise opposites: all-zeros or all-ones from a dead wire cannot pass |
+| `gpio_pull_down(CFG_PIN_OPT_MISO)` | `firmware/opt_pmw3360.c` | with no sensor, every read is a clean 0x00 and never noise |
+| `busy_wait_us(35)` | `firmware/opt_pmw3360.c` | the sensor needs 35 µs to prepare burst data; `busy_wait` because `sleep` is not allowed in an interrupt |
+| `if (buf[0] & 0x07) { s_in_burst = false; return; }` | `firmware/opt_pmw3360.c` | those bits read 0 in burst mode; anything else means the sensor dropped out, so discard and re-enter |
+| `carry_t undo_x = s_carry_x;` … `s_carry_x = undo_x;` | `firmware/main.c` | a failed send is undone exactly, so no count is lost or doubled |
+| `c->r = s - x;` | `common/carry.c` | what did not fit in this report is kept for the next |
+
+### How the tests work and what each one proves
+
+| Test | How it works | What it proves |
+|---|---|---|
+| M3 L0 | feeds bursts and 100,000 random deltas through the carry and compares sums | in = sent + carried, always, and no report exceeds ±127 |
+| M3 L2 | the Pico plays bursts and a square path; `evtest` sums REL_X and REL_Y | the totals return to 0 and the absolute sums are exactly 1000, over real USB |
+| M3 L3 | reads the ID registers from the `info` line, then counts a 10 cm ruler move | the chip is a PMW3360, took its firmware, and its scale is right |
+
+A test that only checked "total = 0" would pass with a dead sensor, so the absolute sums are checked too. That check caught a real problem during the build: the bench had tested an older firmware still on the board.
+
+### Quiz
+
+**Q1. At 1600 CPI, how fast must the mouse move before the carry starts to build up?**
+One report per millisecond carries at most 127 counts, so the limit is 127,000 counts/s. At 1600 counts per inch that is 79 inches/s, about 2 m/s. Slower than that, the carry empties every report. Faster, the cursor lags and catches up when you slow down.
+
+**Q2. Why can a failed send not simply be retried with the same x and y next time?**
+Because by the next pass the timer has added new counts. The clean way is to undo: restore the carry to what it was and put this pass's dx, dy back into the pending totals. The next pass then starts from a state as if this one never happened, with the new counts included.
+
+**Q3. Why is the sensor polled every tick and not read only when its MOTION pin goes low?**
+Polling costs about 100 µs in every 1 ms tick (10% of the CPU) but needs no extra wire and has no interrupt of its own to get wrong. The MOTION pin would save that time when the mouse is still. It is in `config.h` for later; nothing depends on it yet.
+
+### Experiments worth trying
+
+1. In `common/carry.c` change the clamp to ±50 and run `make -C tests M=m3`: the "reports used" check fails (6 reports, not 3) while every sum still passes. Restore it.
+2. With the sensor wired and HW firmware, change `CFG_OPT_CPI` to 800 and rerun `./bench/run.sh M3`: the ruler total should halve and fail the limit.

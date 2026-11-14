@@ -1,8 +1,8 @@
 /*
  * sensors_hw.c - real sensors (-DSENSORS=HW).
  *
- * Milestone 2: the buttons and the joystick are real. The optical sensor (3)
- * and IMU (4) report SENSOR_OFF and return zeros.
+ * Milestone 3: the buttons, joystick and optical sensor are real. The IMU (4)
+ * reports SENSOR_OFF and returns zeros.
  */
 #include "sensors.h"
 
@@ -13,8 +13,13 @@
 #include "hardware/gpio.h"
 #include "pico/time.h"
 
+#include <stdio.h>
+
+#include "opt_pmw3360.h"
+
 static sensor_status_t s_status[SENSOR_COUNT];
 static uint16_t s_joy_centre = CFG_JOY_CENTRE_DEFAULT; /* v0 */
+static char s_boot_info[64] = "none";
 
 /* Mean of n ADC readings, 0.5 ms apart. Blocking, so boot time only. */
 static uint16_t adc_mean(unsigned n) {
@@ -78,7 +83,12 @@ void sensors_init(void) {
 
     s_status[SENSOR_BTN] = SENSOR_OK;  /* plain switches: there is nothing to probe */
     joystick_init();
-    s_status[SENSOR_OPT] = SENSOR_OFF; /* milestone 3 */
+    /* Optical sensor: the ID registers decide whether it is there (spec B4: if
+     * not, it contributes zeros and everything else keeps working). */
+    pmw3360_info_t opt;
+    s_status[SENSOR_OPT] = pmw3360_init(&opt) ? SENSOR_OK : SENSOR_MISSING;
+    snprintf(s_boot_info, sizeof s_boot_info, "opt_id=0x%02x opt_inv=0x%02x opt_srom=0x%02x opt_cpi=%u",
+             opt.product_id, opt.inverse_id, opt.srom_id, opt.cpi_ok ? (unsigned)CFG_OPT_CPI : 0u);
     s_status[SENSOR_IMU] = SENSOR_OFF; /* milestone 4 */
 }
 
@@ -109,9 +119,19 @@ uint16_t sensors_joystick_raw(void) {
 
 uint16_t sensors_joystick_centre(void) { return s_joy_centre; }
 
+const char *sensors_boot_info(void) { return s_boot_info; }
+
 void sensors_optical_delta(int16_t *dx, int16_t *dy) {
     *dx = 0;
     *dy = 0;
+    if (s_status[SENSOR_OPT] != SENSOR_OK) return;
+
+    int16_t sx, sy;
+    pmw3360_read(&sx, &sy);            /* raw sensor axes */
+    /* Mounting corrections, so the caller always gets +x right, +y down (spec T11). */
+    if (CFG_OPT_SWAP_XY) { int16_t t = sx; sx = sy; sy = t; }
+    *dx = CFG_OPT_INVERT_X ? (int16_t)-sx : sx;
+    *dy = CFG_OPT_INVERT_Y ? (int16_t)-sy : sy;
 }
 
 void sensors_imu_raw(int16_t a[3], int16_t g[3]) {

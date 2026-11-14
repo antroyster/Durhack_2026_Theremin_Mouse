@@ -72,6 +72,9 @@ uint16_t sensors_joystick_centre(void);
 /* Optical counts since the previous call (HID convention: +x right, +y down). */
 void sensors_optical_delta(int16_t *dx, int16_t *dy);
 
+/* One line of boot facts for the bench, e.g. "opt_id=0x42 opt_srom=0x04 opt_cpi=1600". */
+const char *sensors_boot_info(void);
+
 /* Raw IMU counts: a = ax, ay, az; g = gx, gy, gz. */
 void sensors_imu_raw(int16_t a[3], int16_t g[3]);
 

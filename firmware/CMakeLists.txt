@@ -56,6 +56,7 @@ set(APP_SOURCES
     ${COMMON_DIR}/debounce.c        # 5 ms time-based debounce
     ${COMMON_DIR}/mouse_report.c    # builds the 4-byte HID report, "send only on change"
     ${COMMON_DIR}/scroll.c          # joystick deadzone and scroll accumulator
+    ${COMMON_DIR}/carry.c           # optical clamp-and-carry
 )
 
 # Add exactly one sensor backend; both implement sensors.h.
@@ -64,7 +65,7 @@ if(SENSORS STREQUAL "SIM")
     list(APPEND APP_SOURCES sensors_sim.c ${COMMON_DIR}/sim_data.c)
 else()
     # Real sensors.
-    list(APPEND APP_SOURCES sensors_hw.c)
+    list(APPEND APP_SOURCES sensors_hw.c opt_pmw3360.c)
 endif()
 
 # Our firmware executable.
@@ -90,6 +91,7 @@ target_compile_definitions(theremin_mouse PRIVATE
 #   pico_bootrom     reset_usb_boot() for the 1200-baud reboot into BOOTSEL
 #   hardware_gpio    button inputs and the LED
 #   hardware_adc     joystick Y axis
+#   hardware_spi     optical sensor
 #   hardware_sync    save_and_disable_interrupts() around the shared wheel total
 #   tinyusb_device   TinyUSB device stack with OUR descriptors (usb_descriptors.c, tusb_config.h)
 # tinyusb_board is NOT linked: it is the TinyUSB examples' board layer (its own LED/UART set-up on
@@ -100,6 +102,7 @@ target_link_libraries(theremin_mouse
     pico_bootrom
     hardware_gpio
     hardware_adc
+    hardware_spi
     hardware_sync
     tinyusb_device)
 

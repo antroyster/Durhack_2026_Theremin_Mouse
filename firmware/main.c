@@ -1,5 +1,5 @@
 /*
- * Milestone 2: composite USB device = HID mouse (buttons + scroll wheel) + CDC serial.
+ * Milestone 3: composite USB device = HID mouse (buttons, scroll wheel, x/y) + CDC serial.
  *
  *   1 kHz timer interrupt                      main loop (never blocks)
  *   +--------------------------------+         +----------------------------------+
@@ -24,6 +24,7 @@
 #include "hardware/sync.h"
 #include "tusb.h"
 
+#include "carry.h"
 #include "cmd_match.h"
 #include "config.h"
 #include "dbg.h"
@@ -52,6 +53,11 @@ static volatile uint16_t g_joy_raw;   /* last ADC reading, for the debug line on
 static scroll_t s_scroll;             /* touched by the timer interrupt only */
 static uint16_t s_joy_v0;             /* centre measured at boot */
 static bool     s_joy_ok;             /* joystick present: scroll enabled */
+
+/* Optical movement. Same pattern as the wheel: the interrupt adds the counts
+ * it read, the main loop takes them out with interrupts off. */
+static volatile int32_t g_dx_pending, g_dy_pending;
+static bool s_opt_ok;                 /* optical sensor present */
 
 static repeating_timer_t s_tick_timer;
 
@@ -88,12 +94,20 @@ static bool tick_cb(repeating_timer_t *rt) {
         if (w != 0) g_wheel_pending += w; /* safe here: the main loop cannot interrupt an interrupt */
     }
 
+    if (s_opt_ok) {
+        int16_t dx, dy;
+        sensors_optical_delta(&dx, &dy); /* counts since the previous tick */
+        g_dx_pending += dx;
+        g_dy_pending += dy;
+    }
+
     return true; /* keep the timer repeating */
 }
 
 /* ----------------------------------------------------------------- HID ---- */
 
 static mouse_report_state_t s_mouse;
+static carry_t s_carry_x, s_carry_y; /* clamp-and-carry state: main loop only */
 
 static void hid_task(void) {
     /* Ready = configured by the PC, not suspended, and the previous report has
@@ -109,29 +123,46 @@ static void hid_task(void) {
      * add one between the read and the clear. */
     uint32_t irq = save_and_disable_interrupts();
     int32_t pending = g_wheel_pending;
+    int32_t dx = g_dx_pending, dy = g_dy_pending;
     g_wheel_pending = 0;
+    g_dx_pending = 0;
+    g_dy_pending = 0;
     restore_interrupts(irq);
+
+    /* Optical clamp-and-carry: s = r + delta ; x = clamp(s, +/-127) ; r = s - x.
+     * Keep a copy of the carry so a failed send can be undone exactly. */
+    carry_t undo_x = s_carry_x, undo_y = s_carry_y;
+    int8_t x = carry_update(&s_carry_x, dx);
+    int8_t y = carry_update(&s_carry_y, dy);
 
     /* One report carries at most +/-127; anything more goes back for the next one. */
     int32_t wheel = pending;
     if (wheel > 127) wheel = 127;
     if (wheel < -127) wheel = -127;
 
-    /* x and y are 0 until the optical sensor is built.
-     * mouse_report_build() returns true only when something changed (spec T9). */
-    if (mouse_report_build(&s_mouse, buttons, 0, 0, (int8_t)wheel, report)) {
+    /* mouse_report_build() returns true only when something changed (spec T9). */
+    if (mouse_report_build(&s_mouse, buttons, x, y, (int8_t)wheel, report)) {
         /* Report ID 0 = "no report ID": exactly the 4 bytes go on the wire. */
         if (tud_hid_report(0, report, MOUSE_REPORT_SIZE)) {
             pending -= wheel;                /* sent */
+            dx = 0;                          /* now held in the report or in the carry */
+            dy = 0;
         } else {
             s_mouse.last_buttons = previous; /* not queued: try again on the next pass */
+            s_carry_x = undo_x;              /* and undo the carry step */
+            s_carry_y = undo_y;
         }
+    } else {
+        dx = 0;                              /* nothing to send means dx, dy and the carry were all 0 */
+        dy = 0;
     }
 
     /* Whatever was not sent is not lost (spec T10): put it back. */
-    if (pending != 0) {
+    if (pending != 0 || dx != 0 || dy != 0) {
         irq = save_and_disable_interrupts();
         g_wheel_pending += pending;
+        g_dx_pending += dx;
+        g_dy_pending += dy;
         restore_interrupts(irq);
     }
 }
@@ -257,6 +288,7 @@ static void status_task(void) {
                    status_str(s_tick_ok ? sensors_status(SENSOR_BTN) : SENSOR_MISSING),
                    status_str(sensors_status(SENSOR_JOY)),
                    status_str(sensors_status(SENSOR_OPT)), status_str(sensors_status(SENSOR_IMU)));
+        dbg_printf("info %s\n", sensors_boot_info()); /* sensor ID registers, for the bench */
     }
 
     if (fault != 0) {
@@ -287,6 +319,9 @@ int main(void) {
     for (unsigned i = 0; i < 3; i++) debounce_init(&s_debounce[i], false);
     mouse_report_init(&s_mouse);
     scroll_init(&s_scroll);
+    carry_init(&s_carry_x);
+    carry_init(&s_carry_y);
+    s_opt_ok = (sensors_status(SENSOR_OPT) == SENSOR_OK);
     s_joy_ok = (sensors_status(SENSOR_JOY) == SENSOR_OK);
     s_joy_v0 = sensors_joystick_centre();
     cmd_matcher_init(&s_cmd);

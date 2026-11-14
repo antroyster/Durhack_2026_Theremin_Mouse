@@ -383,3 +383,63 @@ PASS  M2 L2  evtest: REL_WHEEL scrolled down (negative tilt)    measured=-99  li
 PASS  M2 L2  evtest: REL_WHEEL total over the cycle             measured=0  limit=-1..1
 SKIP  M2 L3  real joystick: centre, range and drift             measured=-  limit=needs you at the keyboard: run it in a terminal
 ```
+
+## 2026-11-14 22:10:30  git=34f3783+dirty  ./bench/run.sh L2
+
+L2: 21 pass, 3 fail, 3 skip -> FAILED
+
+```
+PASS  M0 L2  hello lines received in 12 s                       measured=12  limit=10..13
+PASS  M0 L2  hello rate over 10 s [Hz]                          measured=1.000  limit=0.95..1.05
+SKIP  M0 L2  LED toggles once a second                          measured=-  limit=needs your eyes: run it in a terminal
+PASS  M2 L2  evtest: REL_WHEEL scrolled up (ramp + half tilt)   measured=98  limit=98..100
+PASS  M2 L2  evtest: REL_WHEEL scrolled down (negative tilt)    measured=-99  limit=-100..-98
+PASS  M2 L2  evtest: REL_WHEEL total over the cycle             measured=-1  limit=-1..1
+PASS  M3 L2  evtest: REL_X total (square returns to start)      measured=0  limit=0
+PASS  M3 L2  evtest: REL_Y total (square returns to start)      measured=0  limit=0
+FAIL  M3 L2  evtest: sum of |REL_X| (2 bursts + 2 sides)        measured=0  limit=1000
+FAIL  M3 L2  evtest: sum of |REL_Y| (2 bursts + 2 sides)        measured=0  limit=1000
+FAIL  M3 L2  evtest: largest |REL_X| or |REL_Y| in one event    measured=0  limit=100..127
+PASS  M1 L2  lsusb: HID interfaces                              measured=1  limit=1
+PASS  M1 L2  lsusb: HID protocol (2 = mouse)                    measured=2  limit=2
+PASS  M1 L2  lsusb: HID endpoint bInterval [ms]                 measured=1  limit=1
+PASS  M1 L2  lsusb: CDC ACM interfaces                          measured=1  limit=1
+PASS  M1 L2  hello lines received in 12 s                       measured=12  limit=10..13
+PASS  M1 L2  hello rate over 10 s [Hz]                          measured=1.000  limit=0.95..1.05
+PASS  M1 L2  evtest: BTN_LEFT presses in one cycle              measured=14  limit=14
+PASS  M1 L2  evtest: BTN_LEFT releases in one cycle             measured=14  limit=14
+PASS  M1 L2  evtest: BTN_RIGHT presses in one cycle             measured=14  limit=14
+PASS  M1 L2  evtest: BTN_RIGHT releases in one cycle            measured=14  limit=14
+PASS  M1 L2  evtest: BTN_MIDDLE presses in one cycle            measured=14  limit=14
+PASS  M1 L2  evtest: BTN_MIDDLE releases in one cycle           measured=14  limit=14
+PASS  M1 L2  1200-baud reboot: time to BOOTSEL (2e8a:0003) [s]  measured=0.44  limit=0..3
+PASS  M1 L2  firmware restarts after BOOTSEL (1 = yes)          measured=1  limit=1
+SKIP  M4 L2  IMU text printout follows the sine model           measured=-  limit=not built until milestone 4
+SKIP  M5 L2  200 Hz framed stream from the Pico                 measured=-  limit=not built until milestone 5
+```
+
+## 2026-11-14 22:11:23  git=34f3783+dirty  ./bench/run.sh M3
+
+M3: 18 pass, 0 fail, 1 skip -> NOT DONE (1 skipped)
+
+```
+PASS  M3 L0 burst of +300: sum sent                        measured=300  limit=300
+PASS  M3 L0 burst of +300: reports used                    measured=3  limit=3
+PASS  M3 L0 burst of +300: largest |x| in a report         measured=127  limit=0..127
+PASS  M3 L0 burst of +300: carry left over                 measured=0  limit=0
+PASS  M3 L0 burst of -300: sum sent                        measured=-300  limit=-300
+PASS  M3 L0 random stream of 100000: in - (sent + carry)   measured=0  limit=0
+PASS  M3 L0 random stream: largest |x| in a report         measured=127  limit=0..127
+PASS  M3 L0 random stream after draining: in - sent        measured=0  limit=0
+PASS  M3 L0 sim cycle: sum of REL_X                        measured=0  limit=0
+PASS  M3 L0 sim cycle: sum of REL_Y                        measured=0  limit=0
+PASS  M3 L0 sim cycle: sum of |REL_X|                      measured=1000  limit=1000
+PASS  M3 L0 sim cycle: sum of |REL_Y|                      measured=1000  limit=1000
+PASS  M3 L0 sim cycle: largest |x| or |y| in a report      measured=127  limit=0..127
+PASS  M3 L2  evtest: REL_X total (square returns to start)      measured=0  limit=0
+PASS  M3 L2  evtest: REL_Y total (square returns to start)      measured=0  limit=0
+PASS  M3 L2  evtest: sum of |REL_X| (2 bursts + 2 sides)        measured=1000  limit=1000
+PASS  M3 L2  evtest: sum of |REL_Y| (2 bursts + 2 sides)        measured=1000  limit=1000
+PASS  M3 L2  evtest: largest |REL_X| or |REL_Y| in one event    measured=127  limit=100..127
+SKIP  M3 L3  real optical sensor: ID and 10 cm ruler            measured=-  limit=needs you at the keyboard: run it in a terminal
+```

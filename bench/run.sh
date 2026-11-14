@@ -56,12 +56,15 @@ capture() { # capture PORT SECONDS OUTFILE
 
 # Make sure the board runs the SIM or HW firmware; flash it if not.
 ensure_fw() { # ensure_fw SIM|HW  -> 0 if the board now runs that variant
-    local port; port="$(find_port)"
-    if [ -n "$port" ]; then
+    local port dir uf2; port="$(find_port)"
+    dir="firmware/build-$(echo "$1" | tr A-Z a-z)"; uf2="$dir/theremin_mouse.uf2"
+    # Rebuild first (quick when nothing changed), so edited source is never tested stale.
+    [ -f "$dir/CMakeCache.txt" ] && cmake --build "$dir" -j >/dev/null 2>&1
+    if [ -n "$port" ] && [ -f "$uf2" ] && [ "$(sha256sum "$uf2" | cut -d" " -f1)" = "$(cat bench/.last_flashed 2>/dev/null)" ]; then
         capture "$port" 2.5 "$TMP/fw"
         grep -q "sensors=$1" "$TMP/fw" && return 0
     fi
-    echo "[bench] board is not running the $1 firmware: flashing it"
+    echo "[bench] board is not running the current $1 firmware: flashing it"
     "$ROOT/bench/flash.sh" "$1" || return 1
     sleep 1.5
     port="$(find_port)"; [ -n "$port" ] || return 1
@@ -313,6 +316,43 @@ m2_l3() {
     check_range "M2 L3" "ADC travel below centre [counts]" "$(( ${v0/none/0} - ${mn/none/0} ))" 1000 2100
 }
 
+m3_l2() {
+    if ! ensure_fw SIM; then fail "M3 L2" "board runs the SIM firmware" "could not flash or find the Pico"; return; fi
+    if sim_cycle "M3 L2"; then
+        check_eq "M3 L2" "evtest: REL_X total (square returns to start)" "$(sum_rel REL_X all "$TMP/ev")" 0
+        check_eq "M3 L2" "evtest: REL_Y total (square returns to start)" "$(sum_rel REL_Y all "$TMP/ev")" 0
+        check_eq "M3 L2" "evtest: sum of |REL_X| (2 bursts + 2 sides)" "$(sum_rel REL_X abs "$TMP/ev")" 1000
+        check_eq "M3 L2" "evtest: sum of |REL_Y| (2 bursts + 2 sides)" "$(sum_rel REL_Y abs "$TMP/ev")" 1000
+        local worst
+        worst=$(awk '/\(REL_[XY]\), value/ { v = $NF + 0; if (v < 0) v = -v; if (v > m) m = v } END { print m + 0 }' "$TMP/ev")
+        check_range "M3 L2" "evtest: largest |REL_X| or |REL_Y| in one event" "$worst" 100 127
+    fi
+}
+
+m3_l3() {
+    if [ ! -t 0 ]; then skip "M3 L3" "real optical sensor: ID and 10 cm ruler" "needs you at the keyboard: run it in a terminal"; return; fi
+    if ! ensure_fw HW; then fail "M3 L3" "board runs the HW firmware" "could not flash or find the Pico"; return; fi
+    local info id srom cpi
+    info="$(grep ' info ' "$TMP/fw" | tail -1)"
+    id="$(echo "$info" | sed -n 's/.*opt_id=\(0x[0-9a-f]*\).*/\1/p')"
+    srom="$(echo "$info" | sed -n 's/.*opt_srom=\(0x[0-9a-f]*\).*/\1/p')"
+    cpi="$(echo "$info" | sed -n 's/.*opt_cpi=\([0-9]*\).*/\1/p')"
+    check_eq "M3 L3" "Product_ID register (0x42 = 66 = PMW3360)" "$(( ${id:-0} ))" 66
+    check_eq "M3 L3" "SROM_ID after firmware upload (expect 4)" "$(( ${srom:-0} ))" 4
+    check_eq "M3 L3" "CPI setting read back" "${cpi:-0}" 1600
+    if [ "$(( ${id:-0} ))" != 66 ]; then return; fi
+    evtest_ready "M3 L3" "10 cm ruler move" || return
+    stdbuf -oL evtest --grab "$EVENT" > "$TMP/ev-ruler" 2>&1 & EVPID=$!
+    sleep 1
+    echo; read -r -p ">>> Slide the sensor exactly 10 cm to the RIGHT along a ruler, then press Enter. " _
+    kill "$EVPID" 2>/dev/null; wait "$EVPID" 2>/dev/null; EVPID=""
+    local x y; x="$(sum_rel REL_X all "$TMP/ev-ruler")"; y="$(sum_rel REL_Y all "$TMP/ev-ruler")"
+    echo "[bench] ruler move: REL_X total=$x  REL_Y total=$y"
+    # 10 cm = 3.937 inch; at 1600 CPI that is 6299 counts. +/-5%.
+    check_range "M3 L3" "10 cm to the right: REL_X total [counts]" "$x" 5984 6614
+    check_range "M3 L3" "10 cm to the right: REL_Y total (sideways error)" "$y" -630 630
+}
+
 not_built() { skip "$1" "$2" "not built until milestone $3"; }
 
 # ---------- what runs for each target ----------
@@ -320,12 +360,10 @@ run_level() {
     case "$1" in
         L0) l0 ;;
         L1) m5_l1 ;;
-        L2) m0_l2; m2_l2; m1_l2
-            not_built "M3 L2" "scripted square path: REL_X / REL_Y totals" 3
+        L2) m0_l2; m2_l2; m3_l2; m1_l2
             not_built "M4 L2" "IMU text printout follows the sine model" 4
             not_built "M5 L2" "200 Hz framed stream from the Pico" 5 ;;
-        L3) m1_l3; m2_l3
-            not_built "M3 L3" "real optical sensor: ID register, 10 cm ruler" 3
+        L3) m1_l3; m2_l3; m3_l3
             not_built "M4 L3" "real IMU: ID register, 6-face test, 90 degree turn" 4 ;;
         L4) not_built "L4" "everything real and integrated" 5 ;;
         L5) not_built "M6 L5" "10-minute soak, unplug/replug, reflash x3" 6 ;;
@@ -336,8 +374,7 @@ run_milestone() {
         M0) m0_l2 ;;
         M1) l0 m1; m1_l2; m1_l3 ;;
         M2) l0 m2; m2_l2; m2_l3 ;;
-        M3) l0 m3; not_built "M3 L2" "scripted square path: REL_X / REL_Y totals" 3
-            not_built "M3 L3" "real optical sensor: ID register, 10 cm ruler" 3 ;;
+        M3) l0 m3; m3_l2; m3_l3 ;;
         M4) l0 m4; not_built "M4 L2" "IMU text printout follows the sine model" 4
             not_built "M4 L3" "real IMU: ID register, 6-face test, 90 degree turn" 4 ;;
         M5) l0 m5; m5_l1; not_built "M5 L2" "200 Hz framed stream from the Pico" 5 ;;

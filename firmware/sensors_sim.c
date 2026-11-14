@@ -82,6 +82,8 @@ uint16_t sensors_joystick_raw(void) {
 
 uint16_t sensors_joystick_centre(void) { return (uint16_t)SIM_ADC_CENTRE; }
 
+const char *sensors_boot_info(void) { return "sim"; }
+
 void sensors_optical_delta(int16_t *dx, int16_t *dy) {
     if (s_active) {
         sim_optical_delta(s_tau_ms, dx, dy);
