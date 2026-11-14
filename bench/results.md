@@ -287,3 +287,70 @@ PASS  M1 L2  1200-baud reboot: time to BOOTSEL (2e8a:0003) [s]  measured=0.44  l
 PASS  M1 L2  firmware restarts after BOOTSEL (1 = yes)          measured=1  limit=1
 SKIP  M1 L3  10 real presses per button                         measured=-  limit=needs you at the keyboard: run it in a terminal
 ```
+
+## 2026-11-14 21:57:35  git=7ffa944+dirty  ./bench/run.sh M1
+
+M1: 48 pass, 0 fail, 2 skip -> NOT DONE (2 skipped)
+
+```
+PASS  M1 L0 bouncy press, 0.1 ms sampling: press events    measured=1  limit=1
+PASS  M1 L0 bouncy press, 0.1 ms sampling: release events  measured=0  limit=0
+PASS  M1 L0 bouncy press: delay after edge [ms]            measured=8  limit=7.9..8.1
+PASS  M1 L0 bouncy press, 1 ms sampling: press events      measured=1  limit=1
+PASS  M1 L0 4 ms glitch, 0.1 ms sampling: events           measured=0  limit=0
+PASS  M1 L0 4 ms glitch, 1 ms sampling: events             measured=0  limit=0
+PASS  M1 L0 6 ms pulse is a real click: presses            measured=1  limit=1
+PASS  M1 L0 6 ms pulse is a real click: releases           measured=1  limit=1
+PASS  M1 L0 5 ms pulse, 1 ms sampling: events (rejected)   measured=0  limit=0
+PASS  M1 L0 6 ms pulse, 1 ms sampling: presses (accepted)  measured=1  limit=1
+PASS  M1 L0 press held across the clock wrap: presses      measured=1  limit=1
+PASS  M1 L0 command "@RUN\n": RUN fired                    measured=1  limit=1
+PASS  M1 L0 command "@STOP\n": STOP fired                  measured=1  limit=1
+PASS  M1 L0 command "@@RUN\n" (restart on '@'): RUN fired  measured=1  limit=1
+PASS  M1 L0 command "@RU@RUN\n": RUN fired                 measured=1  limit=1
+PASS  M1 L0 command "@RUN\r\n" (CR inserted): RUN fired    measured=0  limit=0
+PASS  M1 L0 command "RUN\n" (no '@'): RUN fired            measured=0  limit=0
+PASS  M1 L0 command "@RUNX\n": RUN fired                   measured=0  limit=0
+PASS  M1 L0 command "@run\n" (lower case): RUN fired       measured=0  limit=0
+PASS  M1 L0 echoed status line: RUN fired                  measured=0  limit=0
+PASS  M1 L0 echoed status line: STOP fired                 measured=0  limit=0
+PASS  M1 L0 two commands in one stream: RUN fired          measured=2  limit=2
+PASS  M1 L0 sim cycle: left presses                        measured=14  limit=14
+PASS  M1 L0 sim cycle: left releases                       measured=14  limit=14
+PASS  M1 L0 sim cycle: right presses                       measured=14  limit=14
+PASS  M1 L0 sim cycle: right releases                      measured=14  limit=14
+PASS  M1 L0 sim cycle: middle presses                      measured=14  limit=14
+PASS  M1 L0 sim cycle: middle releases                     measured=14  limit=14
+PASS  M1 L0 sim cycle, 0.1 ms sampling: left presses       measured=14  limit=14
+PASS  M1 L0 idle for 1000 ticks: reports                   measured=0  limit=0
+PASS  M1 L0 button held for 1000 ticks: reports            measured=1  limit=1
+PASS  M1 L0 report byte 0 while left is held               measured=1  limit=1
+PASS  M1 L0 button released, then idle: reports            measured=1  limit=1
+PASS  M1 L0 report byte 0 after release                    measured=0  limit=0
+PASS  M1 L0 motion on 10 ticks: reports                    measured=10  limit=10
+PASS  M1 L0 report byte 1 (x = 5)                          measured=5  limit=5
+PASS  M1 L0 report byte 2 (y = -3 as two's complement)     measured=253  limit=253
+PASS  M1 L0 report byte 3 (wheel = 1)                      measured=1  limit=1
+PASS  M1 L0 bits above bit 2 are masked off                measured=0  limit=0
+PASS  M1 L0 sim cycle through the pipeline: HID reports    measured=84  limit=84
+PASS  M1 L2  lsusb: HID interfaces                              measured=1  limit=1
+PASS  M1 L2  lsusb: HID protocol (2 = mouse)                    measured=2  limit=2
+PASS  M1 L2  lsusb: HID endpoint bInterval [ms]                 measured=1  limit=1
+PASS  M1 L2  lsusb: CDC ACM interfaces                          measured=1  limit=1
+PASS  M1 L2  hello lines received in 12 s                       measured=12  limit=10..13
+PASS  M1 L2  hello rate over 10 s [Hz]                          measured=1.000  limit=0.95..1.05
+SKIP  M1 L2  scripted clicks counted by evtest                  measured=-  limit=no permission on /dev/input/by-id/usb-Ant_Theremin_Mouse_E6611CB6976D8D25-if02-event-mouse: install bench/70-theremin-mouse.rules (see TESTBENCH.md)
+PASS  M1 L2  1200-baud reboot: time to BOOTSEL (2e8a:0003) [s]  measured=0.44  limit=0..3
+PASS  M1 L2  firmware restarts after BOOTSEL (1 = yes)          measured=1  limit=1
+SKIP  M1 L3  10 real presses per button                         measured=-  limit=no permission on /dev/input/by-id/usb-Ant_Theremin_Mouse_E6611CB6976D8D25-if02-event-mouse: install bench/70-theremin-mouse.rules (see TESTBENCH.md)
+```
+
+## 2026-11-14 22:00:28  git=7ffa944+dirty  ./bench/run.sh M0
+
+M0: 3 pass, 0 fail, 0 skip -> ALL PASS
+
+```
+PASS  M0 L2  hello lines received in 12 s                       measured=12  limit=10..13
+PASS  M0 L2  hello rate over 10 s [Hz]                          measured=1.000  limit=0.95..1.05
+PASS  M0 L2  LED toggles once a second (you looked; 1 = yes)    measured=1  limit=1
+```
