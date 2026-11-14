@@ -162,6 +162,45 @@ m0_l2() {
     fi
 }
 
+# Play the 30 s scripted cycle once per run, with the mouse grabbed by evtest.
+# All L2 mouse tests read the same capture, $TMP/ev. Returns 0 if it is usable.
+CYCLE=""
+sim_cycle() { # sim_cycle TAG
+    [ "$CYCLE" = ok ] && return 0
+    if [ "$CYCLE" = bad ]; then skip "$1" "scripted cycle counted by evtest" "the cycle could not be captured (see above)"; return 1; fi
+    CYCLE=bad
+    evtest_ready "$1" "scripted cycle counted by evtest" || return 1
+    stdbuf -oL evtest --grab "$EVENT" > "$TMP/ev" 2>&1 &
+    EVPID=$!
+    sleep 1
+    # Never start the script unless the grab is certain: no grab = clicks on the desktop.
+    if ! kill -0 "$EVPID" 2>/dev/null || grep -qi 'grab' "$TMP/ev"; then
+        fail "$1" "scripted cycle counted by evtest" "evtest could not grab the device (is the monitor or another evtest running?)"
+        kill "$EVPID" 2>/dev/null; EVPID=""; return 1
+    fi
+    echo "[bench] playing the 30 s scripted cycle (events go to the test, not the desktop) ..."
+    SIM_RUNNING=1
+    send_cmd RUN
+    local i=62 lost=0
+    while [ $i -gt 0 ]; do          # 31 s, checking the grab is still alive
+        sleep 0.5; i=$((i - 1))
+        if ! kill -0 "$EVPID" 2>/dev/null; then lost=1; break; fi
+    done
+    stop_sim
+    kill "$EVPID" 2>/dev/null; wait "$EVPID" 2>/dev/null; EVPID=""
+    if [ $lost = 1 ]; then
+        fail "$1" "scripted cycle counted by evtest" "evtest stopped during the cycle; the script was stopped"; return 1
+    fi
+    CYCLE=ok
+}
+# Sum of one relative axis in an evtest log: sum_rel REL_WHEEL up|down|all|abs FILE
+sum_rel() {
+    awk -v pat="($1), value" -v mode="$2" 'index($0, pat) { v = $NF + 0
+        if (mode == "up" && v > 0) s += v; else if (mode == "down" && v < 0) s += v
+        else if (mode == "all") s += v; else if (mode == "abs") s += (v < 0 ? -v : v) }
+        END { print s + 0 }' "$3"
+}
+
 m1_l2() {
     if ! ensure_fw SIM; then fail "M1 L2" "board runs the SIM firmware" "could not flash or find the Pico"; return; fi
 
@@ -180,35 +219,13 @@ m1_l2() {
     # 2. Debug text still prints.
     hello_rate "M1 L2"
 
-    # 3. Scripted clicks, counted by evtest. The grab keeps them away from the desktop.
-    if evtest_ready "M1 L2" "scripted clicks counted by evtest"; then
-        stdbuf -oL evtest --grab "$EVENT" > "$TMP/ev" 2>&1 &
-        EVPID=$!
-        sleep 1
-        # Never start the clicks unless the grab is certain: no grab = clicks on the desktop.
-        if ! kill -0 "$EVPID" 2>/dev/null || grep -qi 'grab' "$TMP/ev"; then
-            fail "M1 L2" "scripted clicks counted by evtest" "evtest could not grab the device (is the monitor or another evtest running?)"
-        else
-            echo "[bench] playing the 30 s scripted cycle (clicks go to the test, not the desktop) ..."
-            SIM_RUNNING=1
-            send_cmd RUN
-            local i=62 lost=0
-            while [ $i -gt 0 ]; do          # 31 s, checking the grab is still alive
-                sleep 0.5; i=$((i - 1))
-                if ! kill -0 "$EVPID" 2>/dev/null; then lost=1; break; fi
-            done
-            stop_sim
-            if [ $lost = 1 ]; then
-                fail "M1 L2" "scripted clicks counted by evtest" "evtest stopped during the cycle; the script was stopped"
-            else
-                local b
-                for b in LEFT RIGHT MIDDLE; do
-                    check_eq "M1 L2" "evtest: BTN_$b presses in one cycle" "$(count_ev BTN_$b 1 "$TMP/ev")" 14
-                    check_eq "M1 L2" "evtest: BTN_$b releases in one cycle" "$(count_ev BTN_$b 0 "$TMP/ev")" 14
-                done
-            fi
-        fi
-        kill "$EVPID" 2>/dev/null; wait "$EVPID" 2>/dev/null; EVPID=""
+    # 3. Scripted clicks, counted by evtest.
+    if sim_cycle "M1 L2"; then
+        local b
+        for b in LEFT RIGHT MIDDLE; do
+            check_eq "M1 L2" "evtest: BTN_$b presses in one cycle" "$(count_ev BTN_$b 1 "$TMP/ev")" 14
+            check_eq "M1 L2" "evtest: BTN_$b releases in one cycle" "$(count_ev BTN_$b 0 "$TMP/ev")" 14
+        done
     fi
 
     # 4. 1200-baud reboot reaches BOOTSEL within 3 s. Run last: it stops the firmware.
@@ -246,6 +263,56 @@ m1_l3() {
     done
 }
 
+m2_l2() {
+    if ! ensure_fw SIM; then fail "M2 L2" "board runs the SIM firmware" "could not flash or find the Pico"; return; fi
+    make -s -C tests build/test_m2 >/dev/null 2>&1
+    local pred up down
+    pred="$(tests/build/test_m2 | grep 'predicted REL_WHEEL')"
+    up="$(echo "$pred" | sed -n 's/.*up=\(-*[0-9]*\).*/\1/p')"; down="$(echo "$pred" | sed -n 's/.*down=\(-*[0-9]*\).*/\1/p')"
+    if [ -z "$up" ] || [ -z "$down" ]; then fail "M2 L2" "predicted wheel totals" "tests/build/test_m2 gave no prediction"; return; fi
+    if sim_cycle "M2 L2"; then
+        check_range "M2 L2" "evtest: REL_WHEEL scrolled up (ramp + half tilt)" "$(sum_rel REL_WHEEL up "$TMP/ev")" $((up - 1)) $((up + 1))
+        check_range "M2 L2" "evtest: REL_WHEEL scrolled down (negative tilt)" "$(sum_rel REL_WHEEL down "$TMP/ev")" $((down - 1)) $((down + 1))
+        check_range "M2 L2" "evtest: REL_WHEEL total over the cycle" "$(sum_rel REL_WHEEL all "$TMP/ev")" $((up + down - 1)) $((up + down + 1))
+    fi
+}
+
+# min / max / v0 of the "joy raw=N v0=N" debug lines in a capture file
+joy_stats() { awk '{ for (i = 1; i <= NF; i++) { if ($i ~ /^raw=/) r = substr($i, 5) + 0; if ($i ~ /^v0=/) v = substr($i, 4) + 0 } }
+    / joy raw=/ { if (!n || r < mn) mn = r; if (!n || r > mx) mx = r; n++ }
+    END { if (n) print mn, mx, v, n; else print "none none none 0" }' "$1"; }
+
+m2_l3() {
+    if [ ! -t 0 ]; then skip "M2 L3" "real joystick: centre, range and drift" "needs you at the keyboard: run it in a terminal"; return; fi
+    if ! ensure_fw HW; then fail "M2 L3" "board runs the HW firmware" "could not flash or find the Pico"; return; fi
+    local port; port="$(find_port)"
+    if ! grep -q 'joy=ok' "$TMP/fw"; then
+        fail "M2 L3" "joystick found at boot" "status line says joy is not ok: check the wiring to GPIO26 / 3V3 / GND, then replug"; return
+    fi
+    check_eq "M2 L3" "joystick found at boot (1 = yes)" 1 1
+
+    echo; echo ">>> Take your hand OFF the joystick. Measuring for 10 s ..."
+    local ev_ok=0
+    if evtest_ready "M2 L3" "no scrolling at rest (evtest)"; then
+        stdbuf -oL evtest --grab "$EVENT" > "$TMP/ev-rest" 2>&1 & EVPID=$!; ev_ok=1
+    fi
+    capture "$port" 10 "$TMP/joy-rest"
+    [ $ev_ok = 1 ] && { kill "$EVPID" 2>/dev/null; wait "$EVPID" 2>/dev/null; EVPID=""; }
+    local mn mx v0 n; read -r mn mx v0 n <<< "$(joy_stats "$TMP/joy-rest")"
+    echo "[bench] at rest: ADC centre v0=$v0  min=$mn  max=$mx  ($n readings)"
+    check_range "M2 L3" "joystick readings in 10 s" "$n" 40 60
+    local drift; drift=$(awk -v a="$mn" -v b="$mx" -v c="$v0" 'BEGIN { d = (c - a > b - c) ? c - a : b - c; printf "%.3f", d / 2048 }')
+    check_range "M2 L3" "centre drift at rest, as a fraction of full tilt" "$drift" 0 0.099
+    [ $ev_ok = 1 ] && check_eq "M2 L3" "REL_WHEEL events at rest" "$(grep -c '(REL_WHEEL), value' "$TMP/ev-rest")" 0
+
+    echo; read -r -p ">>> Press Enter, then push the joystick fully UP and fully DOWN a few times for 6 s. " _
+    capture "$port" 6 "$TMP/joy-move"
+    read -r mn mx v0 n <<< "$(joy_stats "$TMP/joy-move")"
+    echo "[bench] moving: ADC min=$mn  max=$mx  centre v0=$v0"
+    check_range "M2 L3" "ADC travel above centre [counts]" "$(( ${mx/none/0} - ${v0/none/0} ))" 1000 2100
+    check_range "M2 L3" "ADC travel below centre [counts]" "$(( ${v0/none/0} - ${mn/none/0} ))" 1000 2100
+}
+
 not_built() { skip "$1" "$2" "not built until milestone $3"; }
 
 # ---------- what runs for each target ----------
@@ -253,13 +320,11 @@ run_level() {
     case "$1" in
         L0) l0 ;;
         L1) m5_l1 ;;
-        L2) m0_l2; m1_l2
-            not_built "M2 L2" "scripted joystick ramp: REL_WHEEL total" 2
+        L2) m0_l2; m2_l2; m1_l2
             not_built "M3 L2" "scripted square path: REL_X / REL_Y totals" 3
             not_built "M4 L2" "IMU text printout follows the sine model" 4
             not_built "M5 L2" "200 Hz framed stream from the Pico" 5 ;;
-        L3) m1_l3
-            not_built "M2 L3" "real joystick: ADC centre / min / max, drift" 2
+        L3) m1_l3; m2_l3
             not_built "M3 L3" "real optical sensor: ID register, 10 cm ruler" 3
             not_built "M4 L3" "real IMU: ID register, 6-face test, 90 degree turn" 4 ;;
         L4) not_built "L4" "everything real and integrated" 5 ;;
@@ -270,8 +335,7 @@ run_milestone() {
     case "$1" in
         M0) m0_l2 ;;
         M1) l0 m1; m1_l2; m1_l3 ;;
-        M2) l0 m2; not_built "M2 L2" "scripted joystick ramp: REL_WHEEL total" 2
-            not_built "M2 L3" "real joystick: ADC centre / min / max, drift" 2 ;;
+        M2) l0 m2; m2_l2; m2_l3 ;;
         M3) l0 m3; not_built "M3 L2" "scripted square path: REL_X / REL_Y totals" 3
             not_built "M3 L3" "real optical sensor: ID register, 10 cm ruler" 3 ;;
         M4) l0 m4; not_built "M4 L2" "IMU text printout follows the sine model" 4

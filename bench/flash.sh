@@ -22,7 +22,7 @@ wait_for() { # wait_for SECONDS COMMAND...  (polls every 0.1 s)
 
 echo "[flash] building $VARIANT firmware"
 # Configure every time: it is quick, and it refreshes the git hash the firmware reports.
-cmake -S "$ROOT/firmware" -B "$BUILD" -DPICO_BOARD=pico -DSENSORS="$VARIANT" >/dev/null || { echo "[flash] cmake configure failed"; exit 1; }
+cmake -S "$ROOT/firmware" -B "$BUILD" -DPICO_BOARD=pico -DSENSORS="$VARIANT" >/dev/null 2>&1 || { echo "[flash] cmake configure failed"; exit 1; }
 if ! cmake --build "$BUILD" -j > "$BUILD/build.log" 2>&1; then
     tail -20 "$BUILD/build.log"
     echo "[flash] BUILD FAILED: nothing was flashed"; exit 1

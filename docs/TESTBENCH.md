@@ -10,7 +10,7 @@ How to check each part of the Theremin Mouse on its own, then step by step up to
 |---|---|---|---|---|---|---|
 | M0 blink + hello | – | – | ☑ | – | – | – |
 | M1 composite + buttons | ☑ | – | ☑ | ☐ | – | – |
-| M2 joystick scroll | ☑ | – | · | · | – | – |
+| M2 joystick scroll | ☑ | – | ☑ | ☐ | – | – |
 | M3 optical cursor | ☑ | – | · | · | – | – |
 | M4 IMU text | ☑ | – | · | · | – | – |
 | M5 packets + reader | ☑ | ☑ | · | – | · | – |
@@ -140,6 +140,26 @@ Run everything from the repo root (`src/`). Each test prints PASS, FAIL or SKIP 
   1. Totals off by a factor: `ks` or the tick period in the test no longer match `firmware/config.h`.
   2. Drift at rest: the deadzone comparison in `common/scroll.c` was changed.
 
+### M2-L2 scripted scroll
+- **Goal:** the scroll maths, running on the Pico, sends exactly the predicted number of wheel detents over real USB.
+- **Setup:** one-time setup done. Pico plugged in. The bench flashes SIM firmware if needed.
+- **Run:** `./bench/run.sh M2` (the three `evtest: REL_WHEEL` lines; about 35 s)
+- **Do:** nothing. The scroll events do not reach the desktop.
+- **Pass if:** scrolled up = 99 ±1 (ramp + half tilt), scrolled down = −99 ±1 (negative tilt), total = 0 ±1. The limits come from the same code run on the PC.
+- **If it fails:**
+  1. All three are 0: the script did not start, or the firmware is older than milestone 2. Run `./bench/flash.sh SIM`.
+  2. Up and down are both about double or half: `CFG_SCROLL_KS` or `CFG_TICK_US` in `firmware/config.h` differs from the test's `KS` and `DT_US`.
+
+### M2-L3 real joystick
+- **Goal:** the real joystick is wired, rests inside the deadzone and reaches near full travel both ways.
+- **Setup:** one-time setup done. Joystick wired: Y output to GPIO26 (pin 31), supply to 3V3(OUT) (pin 36), ground to GND. Not 5 V. The bench flashes HW firmware.
+- **Run:** `./bench/run.sh M2` in a terminal
+- **Do:** first keep your hand off the stick for 10 s. Then press Enter and push it fully up and fully down a few times for 6 s.
+- **Pass if:** the status line says `joy=ok`; at rest the reading stays within 0.099 of full tilt from the centre and no wheel events appear; travel is 1000 to 2100 counts each side of centre. The centre, min and max are printed.
+- **If it fails:**
+  1. "status line says joy is not ok": the pin is unconnected or the stick was held at power-up. Check the three wires, leave the stick alone and replug. The LED blinks twice, pauses, and repeats while the joystick is missing.
+  2. Travel too small on one side: the stick is powered from the wrong pin, or X and Y outputs are swapped.
+
 ### M3-L0 clamp-and-carry
 - **Goal:** no optical count is ever lost or invented, and no report exceeds ±127.
 - **Setup:** PC only.
@@ -188,7 +208,6 @@ These tests are defined in the spec and appear as SKIP in `run.sh`. Each gets a 
 
 | Test | Needs |
 |---|---|
-| M2-L2 scripted ramp wheel total; M2-L3 real joystick range and drift | milestone 2 |
 | M3-L2 scripted square path; M3-L3 sensor ID and 10 cm ruler | milestone 3 |
 | M4-L2 text printout vs sine model; M4-L3 six-face test and 90° turn | milestone 4 |
 | M5-L2 200 Hz framed stream from the Pico; L4 integration | milestone 5 |

@@ -354,3 +354,32 @@ PASS  M0 L2  hello lines received in 12 s                       measured=12  lim
 PASS  M0 L2  hello rate over 10 s [Hz]                          measured=1.000  limit=0.95..1.05
 PASS  M0 L2  LED toggles once a second (you looked; 1 = yes)    measured=1  limit=1
 ```
+
+## 2026-11-14 22:06:25  git=c0c5cdc+dirty  ./bench/run.sh M2
+
+M2: 21 pass, 0 fail, 1 skip -> NOT DONE (1 skipped)
+
+```
+PASS  M2 L0 normalise: centre                              measured=0  limit=0
+PASS  M2 L0 normalise: full positive (Q15)                 measured=32768  limit=32768
+PASS  M2 L0 normalise: full negative (Q15)                 measured=-32768  limit=-32768
+PASS  M2 L0 normalise: u = 0.05 is inside the deadzone     measured=0  limit=0
+PASS  M2 L0 normalise: u just above 0.1 passes through (Q15) measured=3361  limit=3277..3400
+PASS  M2 L0 inside deadzone for 10 s: detents              measured=0  limit=0
+PASS  M2 L0 negative side of deadzone for 10 s: detents    measured=0  limit=0
+PASS  M2 L0 full tilt for 5 s: detents                     measured=100  limit=99..101
+PASS  M2 L0 half tilt for 5 s: detents                     measured=50  limit=49..51
+PASS  M2 L0 full negative tilt for 5 s: detents            measured=-100  limit=-101..-99
+PASS  M2 L0 half negative tilt for 5 s: detents            measured=-50  limit=-51..-49
+PASS  M2 L0 full tilt in 20 pieces of 0.25 s: detents      measured=100  limit=99..101
+PASS  M2 L0 full tilt: largest wheel value in one report   measured=1  limit=1
+PASS  M2 L0 sim ramp 0->full over 5 s: detents             measured=49  limit=48..51
+PASS  M2 L0 sim half tilt 5 s: detents                     measured=50  limit=49..51
+PASS  M2 L0 sim negative tilt 5 s: detents                 measured=-99  limit=-101..-99
+PASS  M2 L0 sim drift inside deadzone 5 s: detents         measured=0  limit=0
+PASS  M2 L0 sim whole cycle: wheel total                   measured=0  limit=-2..1
+PASS  M2 L2  evtest: REL_WHEEL scrolled up (ramp + half tilt)   measured=99  limit=98..100
+PASS  M2 L2  evtest: REL_WHEEL scrolled down (negative tilt)    measured=-99  limit=-100..-98
+PASS  M2 L2  evtest: REL_WHEEL total over the cycle             measured=0  limit=-1..1
+SKIP  M2 L3  real joystick: centre, range and drift             measured=-  limit=needs you at the keyboard: run it in a terminal
+```

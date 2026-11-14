@@ -51,6 +51,8 @@
 #define CFG_JOY_CENTRE_LO      1024u /* v0 outside LO..HI = joystick missing ... */
 #define CFG_JOY_CENTRE_HI      3072u
 #define CFG_JOY_CENTRE_DEFAULT 2048u /* ... and this centre is used instead */
+#define CFG_JOY_FLOAT_DELTA    1000u /* reading moves this much between pull-up and pull-down = nothing connected */
+#define CFG_JOY_PRINT_PERIOD_US 200000u /* "joy raw=..." debug line, 5 per second */
 #define CFG_SCROLL_KS          20u  /* ks: detents per second at full tilt */
 #define CFG_SCROLL_DEADZONE_PERMILLE 100 /* d = 0.1 */
 #define CFG_SCROLL_INVERT      0    /* 0: higher ADC reading = scroll up; 1: flipped */

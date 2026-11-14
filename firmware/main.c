@@ -1,5 +1,5 @@
 /*
- * Milestone 1: composite USB device = HID mouse (buttons only) + CDC serial.
+ * Milestone 2: composite USB device = HID mouse (buttons + scroll wheel) + CDC serial.
  *
  *   1 kHz timer interrupt                      main loop (never blocks)
  *   +--------------------------------+         +----------------------------------+
@@ -7,7 +7,9 @@
  *   | raw = sensors_buttons_raw()    |         | cdc_rx_task()     @RUN / @STOP   |
  *   | debounce x3 (5 ms)             |         | hid_task()        send on change |
  *   | g_buttons = debounced byte ----+-------->| status_task()     1 Hz line, LED |
- *   +--------------------------------+ 1 byte  +----------------------------------+
+ *   | joystick -> scroll accumulator |         |                                  |
+ *   | g_wheel_pending += detents ----+-------->| hid_task() takes them (IRQs off) |
+ *   +--------------------------------+         +----------------------------------+
  *
  * The interrupt only samples and debounces. Everything that talks to USB runs
  * in the main loop, because TinyUSB must not be called from an interrupt.
@@ -19,6 +21,7 @@
 #include "pico/bootrom.h"
 #include "pico/time.h"
 #include "hardware/gpio.h"
+#include "hardware/sync.h"
 #include "tusb.h"
 
 #include "cmd_match.h"
@@ -26,6 +29,7 @@
 #include "dbg.h"
 #include "debounce.h"
 #include "mouse_report.h"
+#include "scroll.h"
 #include "sensors.h"
 
 /* ---------------------------------------------------------------- tick ---- */
@@ -38,6 +42,16 @@ static volatile uint8_t g_buttons;
 
 /* Debounce state: touched by the timer interrupt only. */
 static debounce_t s_debounce[3];
+
+/* Joystick scroll. The interrupt runs the accumulator and adds whole detents
+ * to g_wheel_pending; the main loop takes them out. This one is a running
+ * total that BOTH sides modify, so the main loop briefly disables interrupts
+ * around its read-and-clear (a lost update would be a lost detent). */
+static volatile int32_t  g_wheel_pending;
+static volatile uint16_t g_joy_raw;   /* last ADC reading, for the debug line only */
+static scroll_t s_scroll;             /* touched by the timer interrupt only */
+static uint16_t s_joy_v0;             /* centre measured at boot */
+static bool     s_joy_ok;             /* joystick present: scroll enabled */
 
 static repeating_timer_t s_tick_timer;
 
@@ -62,6 +76,18 @@ static bool tick_cb(repeating_timer_t *rt) {
     }
     g_buttons = debounced; /* one atomic byte store */
 
+    if (s_joy_ok) {
+        uint16_t v = sensors_joystick_raw();
+        g_joy_raw = v;
+        /* u = normalised deflection in Q15, 0 inside the deadzone (spec T3, T4). */
+        int32_t u = scroll_normalise_q15(v, s_joy_v0, CFG_JOY_ADC_MIN, CFG_JOY_ADC_MAX,
+                                         SCROLL_DEADZONE_Q15(CFG_SCROLL_DEADZONE_PERMILLE));
+        if (CFG_SCROLL_INVERT) u = -u;
+        /* a += ks * u * dt ; w = trunc(a) ; a -= w. The fraction stays in s_scroll. */
+        int8_t w = scroll_update(&s_scroll, u, CFG_SCROLL_KS, CFG_TICK_US);
+        if (w != 0) g_wheel_pending += w; /* safe here: the main loop cannot interrupt an interrupt */
+    }
+
     return true; /* keep the timer repeating */
 }
 
@@ -79,13 +105,34 @@ static void hid_task(void) {
     uint8_t report[MOUSE_REPORT_SIZE];
     uint8_t previous = s_mouse.last_buttons;
 
-    /* x, y and wheel are 0 until the joystick and optical sensor are built.
+    /* Take every pending wheel detent, with interrupts off so the timer cannot
+     * add one between the read and the clear. */
+    uint32_t irq = save_and_disable_interrupts();
+    int32_t pending = g_wheel_pending;
+    g_wheel_pending = 0;
+    restore_interrupts(irq);
+
+    /* One report carries at most +/-127; anything more goes back for the next one. */
+    int32_t wheel = pending;
+    if (wheel > 127) wheel = 127;
+    if (wheel < -127) wheel = -127;
+
+    /* x and y are 0 until the optical sensor is built.
      * mouse_report_build() returns true only when something changed (spec T9). */
-    if (mouse_report_build(&s_mouse, buttons, 0, 0, 0, report)) {
+    if (mouse_report_build(&s_mouse, buttons, 0, 0, (int8_t)wheel, report)) {
         /* Report ID 0 = "no report ID": exactly the 4 bytes go on the wire. */
-        if (!tud_hid_report(0, report, MOUSE_REPORT_SIZE)) {
+        if (tud_hid_report(0, report, MOUSE_REPORT_SIZE)) {
+            pending -= wheel;                /* sent */
+        } else {
             s_mouse.last_buttons = previous; /* not queued: try again on the next pass */
         }
+    }
+
+    /* Whatever was not sent is not lost (spec T10): put it back. */
+    if (pending != 0) {
+        irq = save_and_disable_interrupts();
+        g_wheel_pending += pending;
+        restore_interrupts(irq);
     }
 }
 
@@ -216,6 +263,13 @@ static void status_task(void) {
         gpio_put(CFG_PIN_LED, led_error_pattern(fault, to_ms_since_boot(get_absolute_time())));
     }
 
+    /* Joystick debug line, 5 per second: lets the bench see the raw ADC value. */
+    static absolute_time_t joy_due;
+    if (s_joy_ok && time_reached(joy_due)) {
+        joy_due = make_timeout_time_us(CFG_JOY_PRINT_PERIOD_US);
+        dbg_printf("joy raw=%u v0=%u\n", (unsigned)g_joy_raw, (unsigned)s_joy_v0);
+    }
+
     uint8_t buttons = g_buttons;
     if (buttons != last_printed) {
         last_printed = buttons;
@@ -232,6 +286,9 @@ int main(void) {
     sensors_init();
     for (unsigned i = 0; i < 3; i++) debounce_init(&s_debounce[i], false);
     mouse_report_init(&s_mouse);
+    scroll_init(&s_scroll);
+    s_joy_ok = (sensors_status(SENSOR_JOY) == SENSOR_OK);
+    s_joy_v0 = sensors_joystick_centre();
     cmd_matcher_init(&s_cmd);
 
     tud_init(0); /* start TinyUSB as a device on port 0 */

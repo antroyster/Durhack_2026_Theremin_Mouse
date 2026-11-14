@@ -263,3 +263,64 @@ No lock is needed because `g_buttons` is one byte with one writer. Storing or lo
 2. **Turn the debounce off.** Set `CFG_DEBOUNCE_US` to 0 in `firmware/config.h`, flash SIM and run `./bench/run.sh M1`. The 4 ms glitches should now show up as extra clicks and the test should go red.
 3. **Break the parser's resync.** In `host/imu_parser.c`, make a CRC failure skip the whole 23-byte candidate, not one byte, and run `make -C tests M=m5_parser`. The "frames found behind a false start" check should fail. Restore it.
 4. **Watch the fake Pico.** Run `make -C host && make -C bench` once, then `bench/build/pico_sim --link /tmp/pico --corrupt 1 &` and `host/build/imu_reader /tmp/pico --duration 10`, and compare the `INJECTED` and `TOTAL` lines.
+
+---
+
+## Milestone 2: joystick scroll (2026-11-14)
+
+### What was built
+
+The joystick's Y axis now drives the scroll wheel. The further you tilt, the faster it scrolls (rate control). Pushing the stick in was already the middle button from milestone 1.
+
+### How it works
+
+```
+every 1 ms (timer interrupt):
+   v  = ADC reading, 0..4095
+   u  = (v - v0) / (4095 - v0)      above centre      (v0 = centre measured at boot)
+        (v - v0) / (v0 - 0)         below centre
+   u  = 0  if |u| < 0.1             deadzone
+   a  = a + ks * u * dt             ks = 20 detents/s, dt = 0.001 s
+   w  = trunc(a) ; a = a - w        w = whole detents, the fraction stays in a
+   g_wheel_pending += w
+
+main loop, when the HID endpoint is free:
+   take g_wheel_pending (interrupts off), send up to +/-127, put the rest back
+```
+
+At full tilt u = 1, so a grows by 20 × 1 × 0.001 = 0.02 per tick and a whole detent comes out every 50 ticks: 20 detents per second. At half tilt it takes 100 ticks. Nothing is rounded away, because the fraction is carried forward.
+
+### Key lines explained
+
+| Line | File | Why it is there |
+|---|---|---|
+| `s->acc += ks * u_q15 * dt_us` | `common/scroll.c` | integers only: u is scaled by 32768 and dt is in microseconds, so the PC and the Pico get identical results |
+| `w = s->acc / SCROLL_ONE_DETENT` | `common/scroll.c` | C integer division truncates toward zero, which is `trunc()` |
+| `return (mag < deadzone_q15) ? 0 : u;` | `common/scroll.c` | the hard deadzone that stops drift at rest |
+| `bool floating = (high - low) > CFG_JOY_FLOAT_DELTA` | `firmware/sensors_hw.c` | boot check: weak pull resistors swing an unconnected pin rail to rail but barely move a real potentiometer |
+| `save_and_disable_interrupts()` around `g_wheel_pending = 0` | `firmware/main.c` | read-and-clear of a running total must not be split by the timer, or a detent is lost |
+| `g_wheel_pending += pending;` after a failed send | `firmware/main.c` | unsent detents go back; nothing is discarded when USB is busy |
+
+### How the tests work and what each one proves
+
+| Test | How it works | What it proves |
+|---|---|---|
+| M2 L0 | holds fixed ADC values for a simulated 5 or 10 s and counts detents | the maths: 100 at full tilt, 50 at half, 0 in the deadzone, symmetric |
+| M2 L2 | plays the scripted ramp on the Pico and sums REL_WHEEL in `evtest`; the limits are printed by the same code on the PC | the Pico's timer, accumulator and USB path deliver the predicted count (measured 99 up, 99 down) |
+| M2 L3 | reads the `joy raw=` debug lines at rest and while you move the stick | your joystick's centre, travel and drift suit the deadzone |
+
+### Quiz
+
+**Q1. The stick is held at exactly u = 0.1004 (just outside the deadzone). How long until the first detent, and why does that feel like a jump?**
+Rate = ks × u = 20 × 0.1004 ≈ 2 detents per second, so the first detent arrives after about 0.5 s. Just inside the deadzone the rate is 0; just outside it is already 2 per second. The hard deadzone makes the rate jump from 0 to 2. Rescaling u to (|u| − d) / (1 − d) would start from 0 smoothly; the spec chose the simple step.
+
+**Q2. Why must the main loop disable interrupts around "read g_wheel_pending and set it to 0", when the button byte needed no protection?**
+The button byte is a state with one writer: reading it late is harmless. The wheel total is modified by both sides. If the timer adds a detent between the main loop's read and its write of 0, that detent is erased. With interrupts off for those two instructions, the timer simply runs a few hundred nanoseconds later.
+
+**Q3. The ramp from centre to full tilt takes 5 s. Why does it give about 49.5 detents and not 50?**
+Without a deadzone the count is the area under rate against time: ∫₀⁵ 20·(t/5) dt = 50. The deadzone removes the first 0.5 s (u < 0.1), a triangle of area ½ × 0.5 s × 2 detents/s = 0.5. So 50 − 0.5 = 49.5; 49 are sent and half a detent stays in the accumulator.
+
+### Experiments worth trying
+
+1. In `firmware/config.h` set `CFG_SCROLL_KS` to 40, run `./bench/flash.sh SIM` and `./bench/run.sh M2`. The test should fail with about 198 up, because the prediction still uses 20. Restore it.
+2. With HW firmware and the joystick wired, run `cat` on the serial port and watch `joy raw=` while moving the stick slowly: note where scrolling starts (about 205 counts from centre).

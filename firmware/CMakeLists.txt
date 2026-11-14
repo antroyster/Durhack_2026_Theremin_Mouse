@@ -55,6 +55,7 @@ set(APP_SOURCES
     ${COMMON_DIR}/cmd_match.c       # recognises the "@RUN" / "@STOP" bench commands on CDC
     ${COMMON_DIR}/debounce.c        # 5 ms time-based debounce
     ${COMMON_DIR}/mouse_report.c    # builds the 4-byte HID report, "send only on change"
+    ${COMMON_DIR}/scroll.c          # joystick deadzone and scroll accumulator
 )
 
 # Add exactly one sensor backend; both implement sensors.h.
@@ -88,6 +89,8 @@ target_compile_definitions(theremin_mouse PRIVATE
 #   pico_unique_id   the flash chip's unique ID, used as the USB serial number
 #   pico_bootrom     reset_usb_boot() for the 1200-baud reboot into BOOTSEL
 #   hardware_gpio    button inputs and the LED
+#   hardware_adc     joystick Y axis
+#   hardware_sync    save_and_disable_interrupts() around the shared wheel total
 #   tinyusb_device   TinyUSB device stack with OUR descriptors (usb_descriptors.c, tusb_config.h)
 # tinyusb_board is NOT linked: it is the TinyUSB examples' board layer (its own LED/UART set-up on
 # GPIO0/1), nothing in the stack needs it, and GPIO0/1 stay free for the Debug Probe.
@@ -96,6 +99,8 @@ target_link_libraries(theremin_mouse
     pico_unique_id
     pico_bootrom
     hardware_gpio
+    hardware_adc
+    hardware_sync
     tinyusb_device)
 
 # No SDK stdio on USB: the SDK's stdio_usb brings its own CDC-only descriptors and would clash with ours.

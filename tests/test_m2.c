@@ -60,9 +60,11 @@ int main(void) {
 
     /* Scripted joystick cycle (spec Testing section 3), checked segment by segment. */
     scroll_init(&s);
-    int total = 0, after_ramp = 0, after_half = 0, after_neg = 0, after_drift = 0;
+    int total = 0, after_ramp = 0, after_half = 0, after_neg = 0, after_drift = 0, up = 0, down = 0;
     for (uint32_t ms = 0; ms < SIM_CYCLE_MS; ms++) {
-        total += scroll_update(&s, norm(sim_joystick_adc(ms * 1000u)), KS, DT_US);
+        int w = scroll_update(&s, norm(sim_joystick_adc(ms * 1000u)), KS, DT_US);
+        total += w;
+        if (w > 0) up += w; else down += w;
         if (ms == 6999) after_ramp = total;
         if (ms == 12999) after_half = total;
         if (ms == 18999) after_neg = total;
@@ -74,7 +76,8 @@ int main(void) {
     check_range("M2 L0 sim negative tilt 5 s: detents", after_neg - after_half, -101, -99);
     check_eq("M2 L0 sim drift inside deadzone 5 s: detents", after_drift - after_neg, 0);
     check_range("M2 L0 sim whole cycle: wheel total", total, -2, 1);
-    printf("INFO  M2 predicted REL_WHEEL total for one sim cycle = %d\n", total);
+    /* The bench (run.sh M2) reads this line and compares it with what evtest counted. */
+    printf("INFO  M2 predicted REL_WHEEL per sim cycle: up=%d down=%d total=%d\n", up, down, total);
 
     return check_done();
 }

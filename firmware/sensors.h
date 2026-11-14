@@ -62,8 +62,12 @@ void sensors_tick(uint32_t now_us);
 /* Raw (not debounced) button levels: bit0 left, bit1 right, bit2 middle; 1 = pressed. */
 uint8_t sensors_buttons_raw(void);
 
-/* Raw 12-bit joystick ADC reading, 0..4095. Returns 0 while the status is not SENSOR_OK. */
+/* Raw 12-bit joystick ADC reading, 0..4095. Returns the centre value while the
+ * status is not SENSOR_OK, so a missing joystick never scrolls. */
 uint16_t sensors_joystick_raw(void);
+
+/* The joystick centre v0 measured by sensors_init() (spec T7). */
+uint16_t sensors_joystick_centre(void);
 
 /* Optical counts since the previous call (HID convention: +x right, +y down). */
 void sensors_optical_delta(int16_t *dx, int16_t *dy);
