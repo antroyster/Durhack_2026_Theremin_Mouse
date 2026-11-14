@@ -500,3 +500,61 @@ A corrupted frame passes only if its 16-bit CRC happens to match: 1 chance in 65
 
 1. Run the reader and unplug the Pico for a few seconds: `host/build/imu_reader /dev/serial/by-id/usb-Ant_Theremin_Mouse_*-if00`. Watch it report the unplug, reconnect, and count `reconnects=1`.
 2. Set `CFG_IMU_QUEUE_SIZE` to 2 in `firmware/config.h`, flash SIM and run `./bench/run.sh M5`. If "frames lost" stays at 0, the main loop is keeping up with a nearly empty queue; add `busy_wait_ms(20)` to the main loop and watch the gaps appear.
+
+---
+
+## Milestone 6: hardening (2026-11-14)
+
+### What was built
+
+- **A watchdog** in the firmware: if the main loop stops for 1 second, the chip resets itself and comes back on USB.
+- **Stale-firmware protection** in the bench: `run.sh` rebuilds and compares the firmware file with what it last flashed, so a test can never run against old code.
+- **The soak and recovery test:** 10 minutes of streaming, three reflashes in a row, and five unplug/replug cycles.
+
+### How it works
+
+```
+watchdog timer:   1000 ms ... counting down ... 0  =>  RESET
+main loop:        watchdog_update() on every pass  =>  timer reloaded to 1000 ms
+
+healthy:  the loop passes thousands of times a second; the timer never gets near 0
+hung:     no more updates; 1 s later the chip restarts and re-enumerates on USB
+```
+
+The reader recovers from the other side: when `read()` returns 0 or `EIO`, it closes the port and retries opening it every 100 ms.
+
+### Key lines explained
+
+| Line | File | Why it is there |
+|---|---|---|
+| `watchdog_enable(CFG_WATCHDOG_MS, true);` | `firmware/main.c` | started after the slow boot-time sensor set-up, so set-up itself cannot trip it |
+| `watchdog_update();` first in the loop | `firmware/main.c` | proves the whole loop is still turning, not just an interrupt |
+| `sha256sum "$UF2" > bench/.last_flashed` | `bench/flash.sh` | records exactly which firmware is on the board |
+| `while [ ! -e "$port" ]` then timing the CSV growing | `bench/run.sh` | measures replug-to-data time from the PC's point of view |
+
+The watchdog is fed from the main loop and not from the timer interrupt on purpose: an interrupt can keep firing while the main loop is stuck, and a watchdog fed from there would never notice.
+
+### How the tests work and what each one proves
+
+| Test | How it works | What it proves |
+|---|---|---|
+| Soak | the reader counts frames for 600 s | no slow leak or drift: 120,000 frames, none lost |
+| Mouse after soak | the 30 s script is replayed | ten minutes of streaming did not disturb HID |
+| Reflash × 3 | `bench/flash.sh SIM` three times | the 1200-baud route works every time, not just once |
+| Replug × 5 | one reader stays running while you unplug and replug | the reader notices, reopens and resumes within 2 s |
+
+### Quiz
+
+**Q1. Why is a 1 s watchdog timeout safe here, when the optical sensor's start-up alone takes 0.4 s?**
+The watchdog is enabled after `sensors_init()`, so the slow start-up happens before it is armed. Once running, one pass of the main loop takes far less than 1 ms, so there is a margin of more than a thousand times.
+
+**Q2. The watchdog resets a hung board. What does the PC see, and what does the reader do?**
+The Pico drops off USB and re-enumerates about a second later, exactly like an unplug and replug. The reader's `read()` returns 0 or `EIO`, it closes the port, retries the open every 100 ms, and carries on; `reconnects` goes up by one. The mouse is back at the same time.
+
+**Q3. Over 10 minutes the PC's clock and the Pico's clock may differ by 30 parts per million. How many frames is that?**
+120,000 frames × 30 × 10⁻⁶ = 3.6 frames. That is why the soak limit is 120,000 ±100 and not exactly 120,000, while "frames lost" (counted from `seq`, not from time) must be exactly 0.
+
+### Experiments worth trying
+
+1. Prove the watchdog: add `if (to_ms_since_boot(get_absolute_time()) > 10000) while (true) {}` to the main loop, flash, and run the reader. About every 11 s the stream should stop, the board should reset, and the reader should reconnect. Remove the line afterwards.
+2. Run `./bench/run.sh M6` on battery with the laptop lid closed part-way through, and see how the reader reports the suspend.

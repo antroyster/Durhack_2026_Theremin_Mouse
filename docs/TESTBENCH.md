@@ -14,7 +14,7 @@ How to check each part of the Theremin Mouse on its own, then step by step up to
 | M3 optical cursor | ☑ | – | ☑ | ☐ | – | – |
 | M4 IMU text | ☑ | – | ☑ | ☐ | – | – |
 | M5 packets + reader | ☑ | ☑ | ☑ | – | ☐ | – |
-| M6 hardening | – | – | – | – | – | · |
+| M6 hardening | – | – | – | – | – | ☐ |
 
 The L0 tests for M2–M5 pass already because the logic modules exist; those milestones still need their firmware and their L2/L3 tests.
 
@@ -252,13 +252,22 @@ Run everything from the repo root (`src/`). Each test prints PASS, FAIL or SKIP 
 
 **Reading the stream by hand:** `host/build/imu_reader /dev/serial/by-id/usb-Ant_Theremin_Mouse_*-if00 --csv out.csv`. Plain `cat` now shows binary; debug text arrives as `LOG:` lines in the reader.
 
----
+### M6-L5 soak and recovery
+- **Goal:** nothing is lost over a long run, and the system recovers from reflashing and unplugging without help.
+- **Setup:** one-time setup done. Pico plugged in. The bench flashes SIM firmware if needed.
+- **Run:** `./bench/run.sh M6` in a terminal (about 13 minutes; the first 12 need nothing from you)
+- **Do:** at the end, when asked, unplug the Pico and plug it back in, five times.
+- **Pass if:** 120,000 ±100 frames in 10 minutes with 0 lost and 0 CRC errors; the mouse script still gives 14 clicks and 1000 counts afterwards; 3 of 3 reflashes succeed; after each replug data flows again within 2 s; the reader counts 5 reconnects.
+- **If it fails:**
+  1. Frames lost during the soak: the PC was suspended or heavily loaded, or another program opened the port. Rerun with the lid open and nothing else reading.
+  2. A replug takes longer than 2 s: the board is slow to enumerate on that USB port or hub. Try a port directly on the laptop.
 
-## Not built yet
-
-These tests are defined in the spec and appear as SKIP in `run.sh`. Each gets a card when its milestone is built.
-
-| Test | Needs |
-|---|---|
-| L4 integration (all real sensors together) | the L3 tests passing first |
-| M6-L5 soak, unplug/replug and reflash | milestone 6 |
+### L4 everything real
+- **Goal:** all real sensors work together as one mouse.
+- **Setup:** every L3 test passing. HW firmware (`./bench/flash.sh HW`).
+- **Run:** `make -C bench && bench/build/monitor`
+- **Do:** click each button, scroll, move the sensor, tilt the IMU, and watch each value respond in the monitor while the cursor behaves normally on the desktop.
+- **Pass if:** every sensor shows `ok` in the status line; each input changes only its own values; the frame rate stays at 200 Hz with 0 CRC errors and 0 gaps.
+- **If it fails:**
+  1. One sensor reads `missing`: go back to its L3 card.
+  2. The frame rate drops when the mouse moves: the tick is overloaded. Check the wiring length to the optical sensor and lower `CFG_OPT_SPI_BAUD` only if reads are failing.

@@ -1,5 +1,5 @@
 /*
- * Milestone 5: composite USB device = HID mouse (buttons, scroll wheel, x/y) + CDC serial
+ * Milestone 6: composite USB device = HID mouse (buttons, scroll wheel, x/y) + CDC serial
  * carrying framed packets: 200 Hz IMU frames (type 0x01) and debug text (type 0x02).
  *
  *   1 kHz timer interrupt                      main loop (never blocks)
@@ -23,6 +23,7 @@
 #include "pico/time.h"
 #include "hardware/gpio.h"
 #include "hardware/sync.h"
+#include "hardware/watchdog.h"
 #include "tusb.h"
 
 #include "carry.h"
@@ -385,7 +386,15 @@ int main(void) {
      * the tick rate does not depend on how long the callback takes. */
     s_tick_ok = add_repeating_timer_us(-(int64_t)CFG_TICK_US, tick_cb, NULL, &s_tick_timer);
 
+    /* Watchdog: a hardware timer that resets the chip unless the main loop
+     * "feeds" it at least once every CFG_WATCHDOG_MS. If the firmware ever
+     * hangs, the board restarts by itself and comes back on USB - the
+     * hands-free recovery route. Started only now, after the slow boot-time
+     * sensor set-up. (true = pause while a debugger has the chip halted.) */
+    watchdog_enable(CFG_WATCHDOG_MS, true);
+
     while (true) {
+        watchdog_update(); /* feed it: one pass of this loop takes well under 1 ms */
         tud_task();     /* USB stack: enumeration, control requests, transfer completions */
         cdc_rx_task();  /* commands from the PC: @RUN, @STOP */
         hid_task();     /* mouse report, only on a change */

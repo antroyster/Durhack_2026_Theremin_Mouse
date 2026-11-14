@@ -535,3 +535,31 @@ PASS  M0 L2  hello lines received in 12 s                       measured=12  lim
 PASS  M0 L2  hello rate over 10 s [Hz]                          measured=1.000  limit=0.95..1.05
 SKIP  M0 L2  LED toggles once a second                          measured=-  limit=needs your eyes: run it in a terminal
 ```
+
+## 2026-11-14 22:20:30  git=d4b9f69+dirty  ./bench/run.sh M6
+
+M6: 6 pass, 0 fail, 1 skip -> NOT DONE (1 skipped)
+
+```
+PASS  M6 L5  soak: frames in 20 s                               measured=4001  limit=3900..4100
+PASS  M6 L5  soak: frames lost                                  measured=0  limit=0
+PASS  M6 L5  soak: CRC errors                                   measured=0  limit=0
+PASS  M6 L5  after soak: BTN_LEFT presses in one cycle          measured=14  limit=14
+PASS  M6 L5  after soak: sum of |REL_X|                         measured=1000  limit=1000
+PASS  M6 L5  reflashes by 1200-baud reboot that succeeded (of 3) measured=3  limit=3
+SKIP  M6 L5  5 unplug/replugs reconnect within 2 s              measured=-  limit=needs your hands: run it in a terminal
+```
+
+## 2026-11-14 22:31:42  git=d4b9f69+dirty  ./bench/run.sh M6
+
+M6: 6 pass, 0 fail, 1 skip -> NOT DONE (1 skipped)
+
+```
+PASS  M6 L5  soak: frames in 600 s                              measured=120000  limit=119900..120100
+PASS  M6 L5  soak: frames lost                                  measured=0  limit=0
+PASS  M6 L5  soak: CRC errors                                   measured=0  limit=0
+PASS  M6 L5  after soak: BTN_LEFT presses in one cycle          measured=14  limit=14
+PASS  M6 L5  after soak: sum of |REL_X|                         measured=1000  limit=1000
+PASS  M6 L5  reflashes by 1200-baud reboot that succeeded (of 3) measured=3  limit=3
+SKIP  M6 L5  5 unplug/replugs reconnect within 2 s              measured=-  limit=needs your hands: run it in a terminal
+```

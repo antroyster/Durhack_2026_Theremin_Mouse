@@ -95,6 +95,7 @@ target_compile_definitions(theremin_mouse PRIVATE
 #   hardware_adc     joystick Y axis
 #   hardware_spi     optical sensor
 #   hardware_i2c     IMU
+#   hardware_watchdog  automatic reset if the main loop hangs
 #   hardware_sync    save_and_disable_interrupts() around the shared wheel total
 #   tinyusb_device   TinyUSB device stack with OUR descriptors (usb_descriptors.c, tusb_config.h)
 # tinyusb_board is NOT linked: it is the TinyUSB examples' board layer (its own LED/UART set-up on
@@ -108,6 +109,7 @@ target_link_libraries(theremin_mouse
     hardware_i2c
     hardware_spi
     hardware_sync
+    hardware_watchdog
     tinyusb_device)
 
 # No SDK stdio on USB: the SDK's stdio_usb brings its own CDC-only descriptors and would clash with ours.

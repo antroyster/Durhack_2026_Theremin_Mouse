@@ -464,6 +464,55 @@ m4_l3() {
     check_range "M4 L3" "90 degree turn: integrated gz [deg]" "${ang:-none}" 80 100
 }
 
+SOAK_SECONDS="${SOAK_SECONDS:-600}"   # the spec says 10 minutes; shorten only when developing the bench
+m6_l5() {
+    if ! ensure_fw SIM; then fail "M6 L5" "board runs the SIM firmware" "could not flash or find the Pico"; return; fi
+    local port tot n; port="$(find_port)"
+
+    # 1. Soak: every frame for 10 minutes.
+    echo "[bench] soak: reading the stream for $SOAK_SECONDS s ..."
+    capture "$port" "$SOAK_SECONDS" "$TMP/soak-log"
+    tot="$(cat "$TMP/total")"; n=$((SOAK_SECONDS * 200))
+    check_range "M6 L5" "soak: frames in $SOAK_SECONDS s" "$(field "$tot" frames)" $((n - 100)) $((n + 100))
+    check_eq "M6 L5" "soak: frames lost" "$(field "$tot" frames_lost)" 0
+    check_eq "M6 L5" "soak: CRC errors" "$(field "$tot" crc_errors)" 0
+
+    # 2. The mouse still works after the soak.
+    CYCLE=""
+    if sim_cycle "M6 L5"; then
+        check_eq "M6 L5" "after soak: BTN_LEFT presses in one cycle" "$(count_ev BTN_LEFT 1 "$TMP/ev")" 14
+        check_eq "M6 L5" "after soak: sum of |REL_X|" "$(sum_rel REL_X abs "$TMP/ev")" 1000
+    fi
+
+    # 3. Three reflashes in a row over the one cable (1200-baud reboot each time).
+    local i ok=0
+    for i in 1 2 3; do "$ROOT/bench/flash.sh" SIM >/dev/null 2>&1 && ok=$((ok + 1)); sleep 1; done
+    check_eq "M6 L5" "reflashes by 1200-baud reboot that succeeded (of 3)" "$ok" 3
+
+    # 4. Unplug and replug five times with one reader left running throughout.
+    if [ ! -t 0 ]; then skip "M6 L5" "5 unplug/replugs reconnect within 2 s" "needs your hands: run it in a terminal"; return; fi
+    port="$(find_port)"
+    "$READER" "$port" --duration 600 --quiet --csv "$TMP/replug.csv" > "$TMP/replug-out" 2>/dev/null &
+    local rdpid=$! before t0 dt
+    sleep 2
+    for i in 1 2 3 4 5; do
+        echo; echo ">>> ($i of 5) UNPLUG the Pico now ..."
+        while [ -e "$port" ]; do sleep 0.05; done
+        echo ">>> ... now plug it back in."
+        while [ ! -e "$port" ]; do sleep 0.02; done
+        t0=$EPOCHREALTIME; before=$(wc -l < "$TMP/replug.csv"); dt=none
+        local k=100
+        while [ $k -gt 0 ]; do     # up to 5 s for new samples to arrive
+            if [ "$(wc -l < "$TMP/replug.csv")" -gt "$before" ]; then dt=$(awk -v a="$t0" -v b="$EPOCHREALTIME" 'BEGIN { printf "%.2f", b - a }'); break; fi
+            sleep 0.05; k=$((k - 1))
+        done
+        check_range "M6 L5" "replug $i: time from port back to data flowing [s]" "$dt" 0 2
+        sleep 1
+    done
+    kill -INT $rdpid 2>/dev/null; wait $rdpid 2>/dev/null
+    check_eq "M6 L5" "reader reconnects counted" "$(field "$(grep '^TOTAL' "$TMP/replug-out")" reconnects)" 5
+}
+
 not_built() { skip "$1" "$2" "not built until milestone $3"; }
 
 # ---------- what runs for each target ----------
@@ -473,8 +522,8 @@ run_level() {
         L1) m5_l1 ;;
         L2) m0_l2; m4_l2; m2_l2; m3_l2; m5_l2; m1_l2 ;;
         L3) m1_l3; m2_l3; m3_l3; m4_l3 ;;
-        L4) not_built "L4" "everything real and integrated" 5 ;;
-        L5) not_built "M6 L5" "10-minute soak, unplug/replug, reflash x3" 6 ;;
+        L4) skip "L4" "everything real and integrated" "run after the L3 tests pass: ./bench/run.sh L3, then use the mouse and bench/build/monitor" ;;
+        L5) m6_l5 ;;
     esac
 }
 run_milestone() {
@@ -485,7 +534,7 @@ run_milestone() {
         M3) l0 m3; m3_l2; m3_l3 ;;
         M4) l0 m4; m4_l2; m4_l3 ;;
         M5) l0 m5; m5_l1; m5_l2 ;;
-        M6) not_built "M6 L5" "10-minute soak, unplug/replug, reflash x3" 6 ;;
+        M6) m6_l5 ;;
     esac
 }
 

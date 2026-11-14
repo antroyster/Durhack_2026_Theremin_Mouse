@@ -85,4 +85,7 @@
 #define CFG_IMU_PRINT_DIV       4u  /* text printout of every 4th sample = 50 lines per second */
 #define CFG_IMU_QUEUE_SIZE      32u /* samples waiting between the tick and the main loop */
 
+/* ---- Hardening (milestone 6) ---- */
+#define CFG_WATCHDOG_MS         1000u /* main loop silent for this long = automatic reset */
+
 #endif /* CONFIG_H */
