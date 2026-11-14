@@ -16,6 +16,8 @@ One cable only: it carries power, flashing (BOOTSEL or 1200-baud reboot), the mo
 - Reserved: GPIO0/GPIO1 kept free for the Debug Probe's UART; GPIO25 is the onboard LED
 - Host OS: Ubuntu 24.04 (Linux only)
 
+Spec: docs/phase1-spec.md is the source of truth for milestones, HID report, maths, packet format and reader API.
+
 ## Repo layout
 - firmware/   Pico code (firmware agent only)
 - host/       POSIX reader (host agent only)
@@ -37,4 +39,4 @@ After each change, add "What I did and why": an ASCII diagram or equation where 
 After each milestone, add a LEARNING.md entry with: what was built, how it works (diagram or equation where it helps), the key lines of code explained, 3 quiz questions with full answers, and any experiment worth trying.
 
 ## Current milestone
-0
+1
