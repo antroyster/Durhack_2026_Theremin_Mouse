@@ -3,9 +3,30 @@
 #include "hardware/i2c.h"
 #include "hardware/timer.h"
 
-// I2C defines
-// This example will use I2C0 on GPIO8 (SDA) and GPIO9 (SCL) running at 400KHz.
-// Pins can be changed, see the GPIO function select table in the datasheet for information on GPIO assignments
+/*
+                    +------[ USB ]------+
+          GP0  [ 1] |o                 o| [40] VBUS
+          GP1  [ 2] |o                 o| [39] VSYS
+          GND  [ 3] |o                 o| [38] GND  <--- GY-521 GND
+          GP2  [ 4] |o                 o| [37] 3V3_EN
+          GP3  [ 5] |o                 o| [36] 3V3(OUT)  <--- GY-521 VCC
+          GP4  [ 6] |o                 o| [35] ADC_VREF
+          GP5  [ 7] |o                 o| [34] GP28
+          GND  [ 8] |o                 o| [33] GND
+          GP6  [ 9] |o                 o| [32] GP27
+          GP7  [10] |o                 o| [31] GP26
+ SDA ---> GP8  [11] |o                 o| [30] RUN
+ SCL ---> GP9  [12] |o                 o| [29] GP22
+          GND  [13] |o                 o| [28] GND
+          GP10 [14] |o                 o| [27] GP21
+          GP11 [15] |o                 o| [26] GP20
+          GP12 [16] |o                 o| [25] GP19
+          GP13 [17] |o                 o| [24] GP18
+          GND  [18] |o                 o| [23] GND
+          GP14 [19] |o                 o| [22] GP17
+          GP15 [20] |o                 o| [21] GP16
+                    +-------------------+
+*/
 #define I2C_PORT i2c0
 #define I2C_SDA 8
 #define I2C_SCL 9
@@ -112,8 +133,6 @@ int polling_loop(float *ax,float*ay,float*az,float*t,float*gx,float*gy,float*gz)
         }
         printf("Accel[g] %6.2f %6.2f %6.2f | Gyro[dps] %7.1f %7.1f %7.1f | %.1fC\n",
                *ax, *ay, *az, *gx, *gy, *gz, *t);
-        sleep_until(time + POLL_TIME*10);
-        return 0;
 }
 int setup_initial(){
 
