@@ -144,6 +144,7 @@ Every milestone (0–6) must be testable with simulated data. A milestone is onl
   | `imu_frame.c` | packs IMU and log frames |
   | `scaling.c` | raw counts → g and °/s |
   | `sim_data.c` | the scripted sensor data in section 3, as pure functions of time |
+  | `cmd_match.c` | recognises the bench commands `@RUN` and `@STOP` on the CDC port |
 
 - **Sensor interface** `firmware/sensors.h` (buttons, joystick ADC, optical dx/dy, IMU raw) with two backends: `sensors_hw.c` (real sensors) and `sensors_sim.c` (scripted data). Chosen at build time: `cmake -DSENSORS=SIM` or `-DSENSORS=HW`.
 - **`firmware/config.h`** holds every pin, the IMU range and data rate, ks, deadzone, debounce time and VID/PID.
@@ -155,7 +156,7 @@ Every milestone (0–6) must be testable with simulated data. A milestone is onl
 ### 3. Simulated data
 All sim data is deterministic, so expected results can be calculated.
 
-**Safety rule:** a SIM build does nothing with the mouse until the PC sends the 5 bytes `@RUN` + newline on the CDC port. It then plays one 30 s cycle and goes idle again. This stops a SIM board clicking and pasting on the desktop by itself. The trigger is a sequence, not one letter, because a serial port opened without `stty raw -echo` echoes the Pico's own text back to it; the firmware never prints `@RUN`, so an echo cannot start the script. The bench also grabs the mouse device (`evtest --grab`) so scripted events reach the test and not the desktop. The IMU sim is not gated; it runs from boot.
+**Safety rule:** a SIM build does nothing with the mouse until the PC sends the 5 bytes `@RUN` + newline on the CDC port. It then plays one 30 s cycle and goes idle again; `@STOP` + newline ends the cycle at once with every button released, and the bench sends it if a test is interrupted. This stops a SIM board clicking and pasting on the desktop by itself. The trigger is a sequence, not one letter, because a serial port opened without `stty raw -echo` echoes the Pico's own text back to it; the firmware never prints `@RUN`, so an echo cannot start the script. The bench also grabs the mouse device (`evtest --grab`) so scripted events reach the test and not the desktop. The IMU sim is not gated; it runs from boot.
 
 τ is the time since the `@RUN` command. Buttons, joystick and optical use τ; the IMU uses `t_us`.
 

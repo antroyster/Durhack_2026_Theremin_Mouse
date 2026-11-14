@@ -157,3 +157,109 @@ The USB buffer fills, and `printf` then waits for space. The SDK gives up after 
 1. **Include after `project()`:** described in Q1 of the pre-milestone quiz above.
 2. **Drift:** change the deadline line to `next_due = make_timeout_time_us(TICK_PERIOD_US);`, add `busy_wait_ms(50);` to the loop, print `time_us_64()` with each `hello`, and watch the timestamps slide. Then restore the original line and compare.
 3. **No terminal attached:** close every program reading the port and check that the LED still blinks on time. With no host listening, the text is dropped straight away.
+
+---
+
+## Milestone 1: composite HID mouse + CDC serial, and the test bench (2026-11-14)
+
+### What was built
+
+- **Firmware:** the Pico is now one USB device with two functions: a HID mouse (three buttons) and a CDC serial port. It appears as `cafe:4005 Ant Theremin Mouse`.
+- **Pure logic in `common/`:** debounce, scroll, clamp-and-carry, report builder, packet framer, CRC and scaling. None of it calls the Pico SDK, so the same files compile for the Pico and for the PC tests.
+- **Two sensor backends:** `sensors_hw.c` reads the real pins; `sensors_sim.c` plays scripted data. `./bench/flash.sh SIM` or `HW` picks one.
+- **Test bench:** `./bench/run.sh L0..L5` or `M0..M6`, the reader in `host/`, a fake Pico (`bench/pico_sim`) and a live monitor.
+
+### How it works
+
+```
+1 kHz timer interrupt                          main loop (never blocks)
+---------------------                          ------------------------
+sensors: raw button bits                       tud_task()          <- runs USB
+   -> debounce x3 (5 ms rule)                  if HID endpoint free:
+   -> g_buttons (one byte) ------------------>    snapshot g_buttons
+                                                  mouse_report_build() says "changed"?
+                                                     yes -> tud_hid_report(4 bytes)
+                                               once a second: "hello ..." status line
+                                               CDC bytes in -> cmd_match -> @RUN / @STOP
+```
+
+The USB layout, as the PC sees it:
+
+```
+Device  class EF/02/01  ("my functions are grouped by IADs")
+`- Configuration (100 bytes, 250 mA)
+   |- IAD: interfaces 0 and 1 are ONE function (CDC)
+   |   |- IF0 CDC control   EP 0x81 interrupt IN
+   |   `- IF1 CDC data      EP 0x02 bulk OUT, EP 0x82 bulk IN
+   `- IF2 HID boot mouse    EP 0x83 interrupt IN, bInterval 1 ms
+```
+
+The 4-byte report is `{ buttons, x, y, wheel }`. Buttons are sent as states (absolute); x, y and wheel as changes (relative).
+
+### Key lines explained
+
+| Line | File | Why it is there |
+|---|---|---|
+| `add_repeating_timer_us(-(int64_t)CFG_TICK_US, ...)` | `firmware/main.c` | the negative period means "between callback starts", so the 1 kHz rate does not depend on how long the callback runs |
+| `g_buttons = debounced;` | `firmware/main.c` | one byte, one writer: the hand-off from interrupt to main loop needs no lock |
+| `if (!tud_hid_ready()) return;` then `mouse_report_build(...)` | `firmware/main.c` | when the endpoint is busy the state simply waits; a report goes out only on a change |
+| `if (p_line_coding->bit_rate == 1200) reset_usb_boot(0, 0);` | `firmware/main.c` | the one-cable reflash path, kept in every build |
+| `if (tud_cdc_write_available() < n) return;` | `firmware/dbg.c` | debug text is all-or-nothing and never blocks |
+| `(uint32_t)(now_us - d->since_us) >= stable_us` | `common/debounce.c` | unsigned subtraction: still correct when the microsecond clock wraps |
+| `s->acc / SCROLL_ONE_DETENT` | `common/scroll.c` | integer division truncates toward zero, which is the spec's `trunc()` |
+| `0x81, 0x06` vs `0x81, 0x02` | `firmware/usb_descriptors.c` | Input (Relative) for motion, Input (Absolute) for buttons |
+| `_Static_assert(sizeof(desc_configuration) == CONFIG_TOTAL_LEN)` | `firmware/usb_descriptors.c` | `wTotalLength` must equal the real byte count or the PC rejects the device |
+
+### How the tests work and what each one proves
+
+| Test | How it works | What it proves |
+|---|---|---|
+| M1 L0 (`tests/test_m1.c`) | feeds made-up waveforms to the debouncer at 0.1 ms and 1 ms steps and counts accepted edges; feeds the report builder and counts reports; feeds strings to the command matcher | the logic is right, with no hardware in the loop |
+| M1 L2 `lsusb` | parses `lsusb -v -d cafe:4005` | the descriptors the PC actually received are the ones in the spec |
+| M1 L2 `hello` | timestamps each line as it arrives and divides lines by time | CDC still works next to HID, and the firmware's clock is right |
+| M1 L2 clicks | grabs the mouse with `evtest`, sends `@RUN`, counts BTN events over the 30 s script | clicks cross real USB and arrive exactly once each |
+| M1 L2 reboot | sets 1200 baud and times how long `2e8a:0003` takes to appear | the board can always be reflashed without touching it |
+| M1 L3 presses | counts events while you press each real button 10 times | the wiring and the debounce time suit your switches |
+| M5 L1 | a fake Pico on a pseudo-terminal sends 12,000 frames, then again with faults injected; the real reader's counts are compared with what was injected | framing, CRC and resync work end to end before any IMU exists |
+
+Two honest limits of the click test:
+
+- **The scripted bounce is invisible to the firmware.** It toggles every 0.5 ms, and the firmware samples every 1 ms, so every sample lands on the "pressed" half. The 0.1 ms unit tests do exercise bounce; the L2 test only proves the glitches and the counts.
+- **Why `@RUN` and not one letter.** A serial port opened without `stty raw -echo` echoes the Pico's own text back to it. The status line contains the letter r, so a one-letter trigger would have started the clicks about once a second.
+
+### Quiz
+
+**Q1. Remove the IAD and set the device class to 0/0/0. What probably still works, what might not, and why does the HID interface need no IAD?**
+
+A USB "function" is what one driver binds to. HID is one interface, so it is one function. CDC ACM is two interfaces (control + data) that only make sense together, and the IAD is the statement "interfaces 0 and 1 are one function". Class 0/0/0 means "each interface is its own function", so without the IAD a generic composite driver could give IF0 and IF1 to different drivers. Linux would probably still work, because its `cdc_acm` driver also reads the CDC Union descriptor inside IF0. Windows relies on the IAD, so the serial port may not appear there. Class EF/02/01 and the IAD belong together: the first is the promise that the second exists.
+
+**Q2. What breaks if bInterval = 10 instead of 1?**
+
+`bInterval` is the longest time the PC may wait between polls of the endpoint, in 1 ms frames. The device never "sends"; it loads a buffer and the PC collects it at the next poll.
+
+- **Click delay.** With debounce T_db = 5 ms, tick T_tick = 1 ms and poll period T_poll:
+  t_report = t_last_bounce + T_db + [0, T_tick) + [0, T_poll).
+  At 1 ms that is 5 to 7 ms; at 10 ms it is 5 to about 16 ms.
+- **Clicks are not lost.** The shortest debounced press is about 5 ms, and the button byte is a state, so the press waits in the buffer and the release follows on the next poll.
+- **The real damage arrives in milestone 3.** Each report carries at most 127 counts, so the fastest cursor speed is 127 × (1000 / T_poll) counts per second: 127,000 at 1 ms but about 12,700 at 10 ms. A faster swipe piles up in the carry and the cursor keeps moving after your hand stops.
+
+**Q3. Why does a 4 ms glitch give no click, and why does the interrupt-to-main hand-off need no lock?**
+
+```
+raw     ___|‾|_|‾|_|‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾    bouncy press: each return to 0 cancels the candidate
+state   _______________|‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾    accepted 5 ms after the LAST bounce: exactly 1 event
+
+raw     ___|‾‾‾‾‾‾‾|____________________    4 ms glitch: samples at 0, 1, 2, 3 ms are high
+state   ________________________________    longest (now - since) = 3000 < 5000 -> cancelled
+```
+
+The rule is time-based (`now − since ≥ 5000 µs`), not "N equal samples", so the result does not depend on the sample rate. At 1 ms sampling a pulse must cover 6 samples to be accepted. The cost is that every edge is reported 5 ms late.
+
+No lock is needed because `g_buttons` is one byte with one writer. Storing or loading a byte is a single instruction on the Cortex-M0+, and an interrupt cannot split an instruction, so the main loop sees the old value or the new one and never a mixture. It would break if the shared data were several values read as a set, or if the main loop modified it. Milestone 3's optical counts accumulate, so they will need interrupts off briefly around "read and zero".
+
+### Experiments worth trying
+
+1. **Slow the mouse down.** Change the HID endpoint's `bInterval` from 1 to 10 in `firmware/usb_descriptors.c`, run `./bench/flash.sh SIM`, then `./bench/run.sh M1`. The click counts should stay at 14 (and the `lsusb` bInterval check should fail, which shows the test is real). Restore it afterwards.
+2. **Turn the debounce off.** Set `CFG_DEBOUNCE_US` to 0 in `firmware/config.h`, flash SIM and run `./bench/run.sh M1`. The 4 ms glitches should now show up as extra clicks and the test should go red.
+3. **Break the parser's resync.** In `host/imu_parser.c`, make a CRC failure skip the whole 23-byte candidate, not one byte, and run `make -C tests M=m5_parser`. The "frames found behind a false start" check should fail. Restore it.
+4. **Watch the fake Pico.** Run `make -C host && make -C bench` once, then `bench/build/pico_sim --link /tmp/pico --corrupt 1 &` and `host/build/imu_reader /tmp/pico --duration 10`, and compare the `INJECTED` and `TOTAL` lines.

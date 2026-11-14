@@ -2,7 +2,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include <string.h>
+
 #include "check.h"
+#include "cmd_match.h"
 #include "debounce.h"
 #include "mouse_report.h"
 #include "sim_data.h"
@@ -48,6 +51,18 @@ static bool wave_sim_left(uint32_t t) { return (sim_buttons(t) & 0x01u) != 0; }
 static bool wave_sim_right(uint32_t t) { return (sim_buttons(t) & 0x02u) != 0; }
 static bool wave_sim_middle(uint32_t t) { return (sim_buttons(t) & 0x04u) != 0; }
 
+/* Pulses of exactly 5 ms and 6 ms, for the boundary at 1 ms sampling. */
+static bool wave_pulse_5ms(uint32_t t) { return t >= 10000u && t < 15000u; }
+
+/* Feed a string to the command matcher; return how many RUN / STOP commands fired. */
+static int feed_cmds(const char *s, cmd_t want) {
+    cmd_matcher_t m;
+    cmd_matcher_init(&m);
+    int n = 0;
+    for (size_t i = 0; i < strlen(s); i++) n += (cmd_matcher_feed(&m, (uint8_t)s[i]) == want);
+    return n;
+}
+
 int main(void) {
     int p, r;
     uint32_t first;
@@ -70,6 +85,42 @@ int main(void) {
     count_events(wave_pulse_6ms, 100000u, 100u, &p, &r, &first);
     check_eq("M1 L0 6 ms pulse is a real click: presses", p, 1);
     check_eq("M1 L0 6 ms pulse is a real click: releases", r, 1);
+
+    /* Boundary at the firmware's 1 ms sampling: 5 samples span only 4 ms, 6 samples span 5 ms. */
+    count_events(wave_pulse_5ms, 100000u, 1000u, &p, &r, &first);
+    check_eq("M1 L0 5 ms pulse, 1 ms sampling: events (rejected)", p + r, 0);
+    count_events(wave_pulse_6ms, 100000u, 1000u, &p, &r, &first);
+    check_eq("M1 L0 6 ms pulse, 1 ms sampling: presses (accepted)", p, 1);
+
+    /* The microsecond clock wraps after 71.6 minutes: a press across the wrap still counts once. */
+    {
+        debounce_t d;
+        debounce_init(&d, false);
+        int presses = 0;
+        bool prev = false;
+        for (uint32_t i = 0; i < 20; i++) {
+            uint32_t t = 0xFFFFF000u + i * 1000u;      /* wraps to 0 after 5 samples */
+            bool now = debounce_update(&d, i >= 2, t, DEBOUNCE_US);
+            presses += (now && !prev);
+            prev = now;
+        }
+        check_eq("M1 L0 press held across the clock wrap: presses", presses, 1);
+    }
+
+    /* --- bench commands: only the exact sequences fire --- */
+    check_eq("M1 L0 command \"@RUN\\n\": RUN fired", feed_cmds("@RUN\n", CMD_RUN), 1);
+    check_eq("M1 L0 command \"@STOP\\n\": STOP fired", feed_cmds("@STOP\n", CMD_STOP), 1);
+    check_eq("M1 L0 command \"@@RUN\\n\" (restart on '@'): RUN fired", feed_cmds("@@RUN\n", CMD_RUN), 1);
+    check_eq("M1 L0 command \"@RU@RUN\\n\": RUN fired", feed_cmds("@RU@RUN\n", CMD_RUN), 1);
+    check_eq("M1 L0 command \"@RUN\\r\\n\" (CR inserted): RUN fired", feed_cmds("@RUN\r\n", CMD_RUN), 0);
+    check_eq("M1 L0 command \"RUN\\n\" (no '@'): RUN fired", feed_cmds("RUN\n", CMD_RUN), 0);
+    check_eq("M1 L0 command \"@RUNX\\n\": RUN fired", feed_cmds("@RUNX\n", CMD_RUN), 0);
+    check_eq("M1 L0 command \"@run\\n\" (lower case): RUN fired", feed_cmds("@run\n", CMD_RUN), 0);
+    check_eq("M1 L0 echoed status line: RUN fired",
+             feed_cmds("hello fw=0.1.0 git=beca700 sensors=SIM btn=ok joy=ok opt=ok imu=ok\n", CMD_RUN), 0);
+    check_eq("M1 L0 echoed status line: STOP fired",
+             feed_cmds("hello fw=0.1.0 git=beca700 sensors=SIM btn=ok joy=ok opt=ok imu=ok\n", CMD_STOP), 0);
+    check_eq("M1 L0 two commands in one stream: RUN fired", feed_cmds("@RUN\nxx@STOP\n@RUN\n", CMD_RUN), 2);
 
     /* --- scripted clicks: 14 per button per cycle, glitches ignored --- */
     wave_fn waves[3] = { wave_sim_left, wave_sim_right, wave_sim_middle };

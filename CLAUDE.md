@@ -22,6 +22,10 @@ Spec: docs/phase1-spec.md is the source of truth for milestones, HID report, mat
 - firmware/   Pico code (firmware agent only)
 - host/       POSIX reader (host agent only)
 - common/protocol.h   shared packet format – change only with Ant's approval
+- common/     pure logic modules (no Pico SDK calls), built for both the Pico and the PC
+- tests/      L0 unit tests on the PC (`make -C tests`)
+- bench/      test bench: `./bench/run.sh L0..L5 | M0..M6`, `./bench/flash.sh SIM|HW`, pico_sim, monitor
+- docs/TESTBENCH.md   checklist and one card per test
 - LEARNING.md   learning log, written by Claude after each milestone
 
 ## Rules
@@ -29,6 +33,8 @@ Spec: docs/phase1-spec.md is the source of truth for milestones, HID report, mat
 - Small diffs. No refactors that weren't asked for.
 - Never block in the TinyUSB task; sensor reads are timer-driven.
 - Every change comes with a test or a manual test procedure and its expected output.
+- A milestone is only done when `./bench/run.sh M<n>` shows every test passing, with none skipped.
+- Flash with `./bench/flash.sh SIM|HW` (1200-baud reboot, then picotool). A SIM build only moves the mouse after the bench sends `@RUN`.
 - If hardware behaviour is unknown, ask Ant for evidence (logs, lsusb, dmesg, scope or logic captures). Do not guess.
 - Claude writes everything, including items marked "Ant writes" in the milestone plan. No hint-only coaching.
 - Never block on predictions or quizzes before building. Get the program running first; Ant learns from LEARNING.md afterwards.

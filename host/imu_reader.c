@@ -59,7 +59,7 @@ int imu_open(const char *path) {
 
     /*
      * open(): ask the kernel for a file descriptor (a small int) for the device.
-     *   O_RDWR   - read and write (the bench sends the 'r' command on this port).
+     *   O_RDWR   - read and write (the bench sends its @RUN and @STOP commands on this port).
      *   O_NOCTTY - do NOT let this serial port become our controlling terminal;
      *              without it a Ctrl-C byte (0x03) or a hang-up on the port
      *              could send signals to this program.
