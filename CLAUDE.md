@@ -45,4 +45,4 @@ After each change, add "What I did and why": an ASCII diagram or equation where 
 After each milestone, add a LEARNING.md entry with: what was built, how it works (diagram or equation where it helps), the key lines of code explained, 3 quiz questions with full answers, and any experiment worth trying.
 
 ## Current milestone
-2
+1

@@ -9,7 +9,7 @@ How to check each part of the Theremin Mouse on its own, then step by step up to
 | Milestone | L0 PC unit tests | L1 PC pipeline | L2 Pico + SIM | L3 Pico + one real sensor | L4 all real | L5 soak |
 |---|---|---|---|---|---|---|
 | M0 blink + hello | – | – | ☑ | – | – | – |
-| M1 composite + buttons | ☑ | – | ☑ | ☑ | – | – |
+| M1 composite + buttons | ☑ | – | ☑ | ☐ | – | – |
 | M2 joystick scroll | ☑ | – | · | · | – | – |
 | M3 optical cursor | ☑ | – | · | · | – | – |
 | M4 IMU text | ☑ | – | · | · | – | – |
