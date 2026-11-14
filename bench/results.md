@@ -479,3 +479,59 @@ PASS  M4 L2  ax vs sine model: worst error [LSB]                measured=0  limi
 PASS  M4 L2  lines where ay, az, gx, gy or gz differ from the model measured=0  limit=0
 SKIP  M4 L3  real IMU: ID, 6 faces, gyro bias, 90 degree turn   measured=-  limit=needs you at the keyboard: run it in a terminal
 ```
+
+## 2026-11-14 22:17:46  git=035add3+dirty  ./bench/run.sh L2
+
+L2: 35 pass, 3 fail, 1 skip -> FAILED
+
+```
+FAIL  M0 L2  hello lines received in 12 s                       measured=0  limit=10..13
+FAIL  M0 L2  hello rate over 10 s [Hz]                          measured=none  limit=0.95..1.05
+SKIP  M0 L2  LED toggles once a second                          measured=-  limit=needs your eyes: run it in a terminal
+PASS  M4 L2  IMU samples in 5 s                                 measured=1001  limit=900..1010
+PASS  M4 L2  ax vs sine model: worst error [LSB]                measured=0  limit=0..1
+PASS  M4 L2  samples where ay, az, gx, gy or gz differ from the model measured=0  limit=0
+PASS  M2 L2  evtest: REL_WHEEL scrolled up (ramp + half tilt)   measured=99  limit=98..100
+PASS  M2 L2  evtest: REL_WHEEL scrolled down (negative tilt)    measured=-99  limit=-100..-98
+PASS  M2 L2  evtest: REL_WHEEL total over the cycle             measured=0  limit=-1..1
+PASS  M3 L2  evtest: REL_X total (square returns to start)      measured=0  limit=0
+PASS  M3 L2  evtest: REL_Y total (square returns to start)      measured=0  limit=0
+PASS  M3 L2  evtest: sum of |REL_X| (2 bursts + 2 sides)        measured=1000  limit=1000
+PASS  M3 L2  evtest: sum of |REL_Y| (2 bursts + 2 sides)        measured=1000  limit=1000
+PASS  M3 L2  evtest: largest |REL_X| or |REL_Y| in one event    measured=127  limit=100..127
+PASS  M5 L2  frames received in 20 s                            measured=4001  limit=3900..4010
+PASS  M5 L2  frame rate from t_us [Hz]                          measured=200.00  limit=198..202
+PASS  M5 L2  t_us step jitter, worst |step - 5000| [us]         measured=0  limit=0..99
+PASS  M5 L2  reader: CRC errors                                 measured=0  limit=0
+PASS  M5 L2  reader: frames lost                                measured=0  limit=0
+PASS  M5 L2  values vs sine model: worst error [LSB]            measured=0  limit=0..1
+PASS  M5 L2  samples with a wrong ay, az, gx, gy or gz          measured=0  limit=0
+FAIL  M5 L2  log packets (hello, info ...) in 20 s              measured=140  limit=30..50
+PASS  M5 L2  reader open: BTN_LEFT presses in one cycle         measured=14  limit=14
+PASS  M5 L2  reader open: sum of |REL_X|                        measured=1000  limit=1000
+PASS  M5 L2  reader open: frames lost during the cycle          measured=0  limit=0
+PASS  M1 L2  lsusb: HID interfaces                              measured=1  limit=1
+PASS  M1 L2  lsusb: HID protocol (2 = mouse)                    measured=2  limit=2
+PASS  M1 L2  lsusb: HID endpoint bInterval [ms]                 measured=1  limit=1
+PASS  M1 L2  lsusb: CDC ACM interfaces                          measured=1  limit=1
+PASS  M1 L2  hello lines received in 12 s                       measured=12  limit=10..13
+PASS  M1 L2  hello rate over 10 s [Hz]                          measured=1.000  limit=0.95..1.05
+PASS  M1 L2  evtest: BTN_LEFT presses in one cycle              measured=14  limit=14
+PASS  M1 L2  evtest: BTN_LEFT releases in one cycle             measured=14  limit=14
+PASS  M1 L2  evtest: BTN_RIGHT presses in one cycle             measured=14  limit=14
+PASS  M1 L2  evtest: BTN_RIGHT releases in one cycle            measured=14  limit=14
+PASS  M1 L2  evtest: BTN_MIDDLE presses in one cycle            measured=14  limit=14
+PASS  M1 L2  evtest: BTN_MIDDLE releases in one cycle           measured=14  limit=14
+PASS  M1 L2  1200-baud reboot: time to BOOTSEL (2e8a:0003) [s]  measured=0.44  limit=0..3
+PASS  M1 L2  firmware restarts after BOOTSEL (1 = yes)          measured=1  limit=1
+```
+
+## 2026-11-14 22:18:24  git=035add3+dirty  ./bench/run.sh M0
+
+M0: 2 pass, 0 fail, 1 skip -> NOT DONE (1 skipped)
+
+```
+PASS  M0 L2  hello lines received in 12 s                       measured=12  limit=10..13
+PASS  M0 L2  hello rate over 10 s [Hz]                          measured=1.000  limit=0.95..1.05
+SKIP  M0 L2  LED toggles once a second                          measured=-  limit=needs your eyes: run it in a terminal
+```

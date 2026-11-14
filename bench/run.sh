@@ -46,11 +46,20 @@ find_port()  { ls /dev/serial/by-id/usb-Ant_Theremin_Mouse_*-if00 /dev/serial/by
 find_event() { ls /dev/input/by-id/usb-Ant_Theremin_Mouse_*-event-mouse 2>/dev/null | head -1; }
 in_bootsel() { lsusb -d 2e8a:0003 >/dev/null 2>&1; }
 
-# Read the CDC port for N seconds; each line is saved as "<arrival time> <text>".
-capture() { # capture PORT SECONDS OUTFILE
-    stty -F "$1" raw -echo 2>/dev/null
-    timeout "$2" cat "$1" 2>/dev/null | while IFS= read -r l; do
-        printf '%s %s\n' "$EPOCHREALTIME" "${l%$'\r'}"    # stamp each line as it arrives
+# Read the CDC port for N seconds through the real reader (host/build/imu_reader).
+# Log packets are saved to OUTFILE as "<arrival time> <text>"; with a 4th argument
+# the IMU frames are also saved there as CSV (seq,t_us,ax,ay,az,gx,gy,gz).
+# The reader's final TOTAL line is left in $TMP/total.
+READER=host/build/imu_reader
+capture() { # capture PORT SECONDS OUTFILE [CSVFILE]
+    [ -x "$READER" ] || make -s -C host >/dev/null 2>&1
+    local csv=(); [ -n "${4:-}" ] && csv=(--csv "$4")
+    : > "$TMP/total"
+    "$READER" "$1" --duration "$2" "${csv[@]}" 2>/dev/null | while IFS= read -r l; do
+        case "$l" in
+            "LOG: "*) printf '%s %s\n' "$EPOCHREALTIME" "${l#LOG: }" ;;   # stamp each line as it arrives
+            TOTAL*)   echo "$l" > "$TMP/total" ;;
+        esac
     done > "$3"
 }
 
@@ -155,6 +164,8 @@ hello_rate() { # hello_rate TAG   "hello" lines must arrive at 1 Hz +/-5% over 1
 }
 
 m0_l2() {
+    # Any current firmware prints hello; SIM is used because it needs nothing wired.
+    if ! ensure_fw SIM; then fail "M0 L2" "board runs the SIM firmware" "could not flash or find the Pico"; return; fi
     hello_rate "M0 L2"
     # The LED is the one thing a script cannot see: ask.
     if [ -t 0 ]; then
@@ -353,35 +364,75 @@ m3_l3() {
     check_range "M3 L3" "10 cm to the right: REL_Y total (sideways error)" "$y" -630 630
 }
 
-# ---- IMU text lines: "imu t_us=N ax=N ay=N az=N gx=N gy=N gz=N ..." ----
-# imu_awk FILE 'END-program': runs awk over the imu lines with fields in v["ax"] etc.
+# ---- IMU samples from the reader's CSV: seq,t_us,ax,ay,az,gx,gy,gz ----
+# imu_awk CSVFILE 'per-row program' 'END program': fields are in v["t_us"], v["ax"] ...
 imu_awk() {
-    awk '/ imu t_us=/ { for (i = 3; i <= 9; i++) { split($i, kv, "="); v[kv[1]] = kv[2] + 0 } n++; '"$2"' }
+    awk -F, 'NR > 1 && NF == 8 { v["seq"] = $1 + 0; v["t_us"] = $2 + 0; v["ax"] = $3 + 0; v["ay"] = $4 + 0; v["az"] = $5 + 0
+                                 v["gx"] = $6 + 0; v["gy"] = $7 + 0; v["gz"] = $8 + 0; n++; '"$2"' }
          END { '"$3"' }' "$1"
 }
-# Mean of one field in g (accel) or deg/s (gyro): imu_mean FILE ax
+# Mean of one field in g (accel) or deg/s (gyro): imu_mean CSVFILE ax
 imu_mean() {
     imu_awk "$1" 's += v["'"$2"'"]' 'if (!n) { print "none"; exit } d = ("'"$2"'" ~ /^a/) ? 16384 : 131; printf "%.3f", s / n / d'
 }
-
-m4_l2() {
-    if ! ensure_fw SIM; then fail "M4 L2" "board runs the SIM firmware" "could not flash or find the Pico"; return; fi
-    local port; port="$(find_port)"
-    echo "[bench] reading the IMU text printout for 5 s ..."
-    capture "$port" 5 "$TMP/imu"
-    local res; res="$(imu_awk "$TMP/imu" '
+# The sine-model check shared by M4 and M5: prints "n worst_ax_error bad_lines rate max_step_error"
+imu_model() {
+    imu_awk "$1" '
         ph = v["t_us"] % 1000000; m = 8192 * sin(6.283185307179586 * ph / 1000000)
         m = (m < 0) ? -int(-m + 0.5) : int(m + 0.5)
         e = v["ax"] - m; if (e < 0) e = -e; if (e > worst) worst = e
         if (v["ay"] != 0 || v["az"] != 16384 || v["gx"] != 0 || v["gy"] != 0) bad++
         if (v["gz"] != ((ph < 500000) ? 11790 : -11790)) bad++
-        if (n == 1) t0 = v["t_us"]; t1 = v["t_us"]' '
-        printf "%d %d %d %.1f", n, worst, bad, (n > 1 && t1 > t0) ? (n - 1) * 1000000 / (t1 - t0) : 0')"
-    local n worst bad rate; read -r n worst bad rate <<< "${res:-0 99 99 0}"
-    check_range "M4 L2" "IMU text lines in 5 s (50 per second)" "$n" 200 260
-    check_range "M4 L2" "print rate from t_us [lines/s]" "$rate" 49.5 50.5
-    check_range "M4 L2" "ax vs sine model: worst error [LSB]" "$worst" 0 1
-    check_eq "M4 L2" "lines where ay, az, gx, gy or gz differ from the model" "$bad" 0
+        if (n == 1) t0 = v["t_us"]
+        if (n > 1 && v["seq"] == sp + 1) { j = v["t_us"] - tp - 5000; if (j < 0) j = -j; if (j > jit) jit = j }
+        t1 = v["t_us"]; tp = v["t_us"]; sp = v["seq"]' '
+        printf "%d %d %d %.2f %d", n, worst, bad, (n > 1 && t1 > t0) ? (n - 1) * 1000000 / (t1 - t0) : 0, jit'
+}
+
+m4_l2() {
+    if ! ensure_fw SIM; then fail "M4 L2" "board runs the SIM firmware" "could not flash or find the Pico"; return; fi
+    local port; port="$(find_port)"
+    echo "[bench] reading IMU samples for 5 s ..."
+    capture "$port" 5 "$TMP/imu-log" "$TMP/imu.csv"
+    local n worst bad rate jit; read -r n worst bad rate jit <<< "$(imu_model "$TMP/imu.csv")"
+    check_range "M4 L2" "IMU samples in 5 s" "${n:-0}" 900 1010
+    check_range "M4 L2" "ax vs sine model: worst error [LSB]" "${worst:-99}" 0 1
+    check_eq "M4 L2" "samples where ay, az, gx, gy or gz differ from the model" "${bad:-99}" 0
+}
+
+m5_l2() {
+    if ! ensure_fw SIM; then fail "M5 L2" "board runs the SIM firmware" "could not flash or find the Pico"; return; fi
+    local port; port="$(find_port)"
+    echo "[bench] reading the framed stream for 20 s ..."
+    capture "$port" 20 "$TMP/m5-log" "$TMP/m5.csv"
+    local n worst bad rate jit; read -r n worst bad rate jit <<< "$(imu_model "$TMP/m5.csv")"
+    local tot; tot="$(cat "$TMP/total")"
+    check_range "M5 L2" "frames received in 20 s" "${n:-0}" 3900 4010
+    check_range "M5 L2" "frame rate from t_us [Hz]" "${rate:-0}" 198 202
+    check_range "M5 L2" "t_us step jitter, worst |step - 5000| [us]" "${jit:-999}" 0 99
+    check_eq "M5 L2" "reader: CRC errors" "$(field "$tot" crc_errors)" 0
+    check_eq "M5 L2" "reader: frames lost" "$(field "$tot" frames_lost)" 0
+    check_range "M5 L2" "values vs sine model: worst error [LSB]" "${worst:-99}" 0 1
+    check_eq "M5 L2" "samples with a wrong ay, az, gx, gy or gz" "${bad:-99}" 0
+    # Per second: 1 hello + 1 info + 5 joy lines = 7 log packets.
+    check_range "M5 L2" "log packets (hello, info, joy) in 20 s" "$(field "$tot" log_frames)" 130 150
+
+    # The mouse must work with the reader open AND closed. The cached cycle (used
+    # by M1-M3) ran with the port closed; this one runs with the reader reading.
+    if evtest_ready "M5 L2" "mouse works while the reader is open"; then
+        "$READER" "$port" --duration 34 --quiet > "$TMP/m5-open" 2>/dev/null &
+        local rdpid=$!
+        sleep 1
+        CYCLE=""
+        if sim_cycle "M5 L2"; then
+            wait $rdpid 2>/dev/null
+            check_eq "M5 L2" "reader open: BTN_LEFT presses in one cycle" "$(count_ev BTN_LEFT 1 "$TMP/ev")" 14
+            check_eq "M5 L2" "reader open: sum of |REL_X|" "$(sum_rel REL_X abs "$TMP/ev")" 1000
+            check_eq "M5 L2" "reader open: frames lost during the cycle" "$(field "$(grep '^TOTAL' "$TMP/m5-open")" frames_lost)" 0
+        else
+            kill $rdpid 2>/dev/null
+        fi
+    fi
 }
 
 m4_l3() {
@@ -398,7 +449,7 @@ m4_l3() {
                 "-X:ax:-1:on the opposite edge, X arrow pointing DOWN" "+Y:ay:1:on its end, Y arrow pointing UP" "-Y:ay:-1:on the other end, Y arrow pointing DOWN"; do
         IFS=: read -r name axis sign text <<< "$face"
         echo; read -r -p ">>> Hold the IMU still, $text. Press Enter. " _
-        capture "$port" 2 "$TMP/face"
+        capture "$port" 2 "$TMP/face-log" "$TMP/face"
         local g lo hi; g="$(imu_mean "$TMP/face" "$axis")"
         if [ "$sign" = 1 ]; then lo=0.95; hi=1.05; else lo=-1.05; hi=-0.95; fi
         check_range "M4 L3" "face $name: $axis [g]" "$g" "$lo" "$hi"
@@ -408,7 +459,7 @@ m4_l3() {
     done
 
     echo; read -r -p ">>> Lay it flat. Press Enter, then turn it 90 degrees anticlockwise (seen from above) within 4 s. " _
-    capture "$port" 4 "$TMP/turn"
+    capture "$port" 4 "$TMP/turn-log" "$TMP/turn"
     local ang; ang="$(imu_awk "$TMP/turn" 'if (n > 1) { dt = v["t_us"] - tp; if (dt < 0) dt += 4294967296; a += v["gz"] / 131 * dt / 1000000 } tp = v["t_us"]' 'printf "%.1f", a')"
     check_range "M4 L3" "90 degree turn: integrated gz [deg]" "${ang:-none}" 80 100
 }
@@ -420,8 +471,7 @@ run_level() {
     case "$1" in
         L0) l0 ;;
         L1) m5_l1 ;;
-        L2) m0_l2; m4_l2; m2_l2; m3_l2; m1_l2
-            not_built "M5 L2" "200 Hz framed stream from the Pico" 5 ;;
+        L2) m0_l2; m4_l2; m2_l2; m3_l2; m5_l2; m1_l2 ;;
         L3) m1_l3; m2_l3; m3_l3; m4_l3 ;;
         L4) not_built "L4" "everything real and integrated" 5 ;;
         L5) not_built "M6 L5" "10-minute soak, unplug/replug, reflash x3" 6 ;;
@@ -434,7 +484,7 @@ run_milestone() {
         M2) l0 m2; m2_l2; m2_l3 ;;
         M3) l0 m3; m3_l2; m3_l3 ;;
         M4) l0 m4; m4_l2; m4_l3 ;;
-        M5) l0 m5; m5_l1; not_built "M5 L2" "200 Hz framed stream from the Pico" 5 ;;
+        M5) l0 m5; m5_l1; m5_l2 ;;
         M6) not_built "M6 L5" "10-minute soak, unplug/replug, reflash x3" 6 ;;
     esac
 }

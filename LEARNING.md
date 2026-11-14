@@ -442,3 +442,61 @@ Angle error = bias × time: 2 × 4 = 8° after the test (most of the ±10° allo
 
 1. Set `CFG_IMU_PRINT_DIV` to 1 in `firmware/config.h` (200 lines per second) and rerun `./bench/run.sh M4`. If the line count comes up short, text is being dropped for lack of room: that is the reason milestone 5 moves to compact binary packets.
 2. With the IMU wired, lay it flat and `cat` the port: `mg=` should read about `0,0,1000`. Tilt it 30° and check the value against 1000 × sin 30° = 500.
+
+---
+
+## Milestone 5: binary packets and the reader (2026-11-14)
+
+### What was built
+
+The serial port now carries only framed packets: a 23-byte IMU frame 200 times a second, and debug text wrapped in log packets. `host/build/imu_reader` (written at milestone 1 for the bench) reads the real Pico. Plain `cat` now shows binary.
+
+### How it works
+
+```
+Pico                                                   PC (host/imu_reader)
+tick -> queue -> proto_pack_imu() -> USB CDC  ----->   read() -> ring buffer
+dbg_printf() -> proto_pack_log()  -> USB CDC  ----->   find AA 55 -> whole frame? -> CRC ok?
+                                                          yes: IMU sample or LOG line
+   AA 55 | type | seq | t_us | payload | crc              no:  skip ONE byte, search again
+```
+
+Each IMU sample gets its `seq` number in the tick interrupt, whether or not it is later sent. So a sample dropped anywhere (queue full, USB buffer full, no listener) shows up on the PC as a gap in `seq`.
+
+Throughput: 200 frames × 23 bytes = 4600 bytes/s, plus about 7 log packets a second. The earlier text printout needed about 100 bytes per sample.
+
+### Key lines explained
+
+| Line | File | Why it is there |
+|---|---|---|
+| `uint16_t seq = s_imu_seq++;` in the tick | `firmware/main.c` | numbering at the source makes every later loss visible |
+| `if (!tud_cdc_connected() \|\| tud_cdc_write_available() < 23) continue;` | `firmware/main.c` | never blocks: with no reader or no room the sample is discarded |
+| `proto_pack_log(frame, ..., seq, time_us_32(), buf, n)` | `firmware/dbg.c` | debug text rides in type 0x02 packets with its own counter |
+| `put_u16(&out[21], proto_crc16(&out[2], 19))` | `common/imu_frame.c` | the CRC covers bytes 2–20: everything except the sync and itself |
+| `discard_one(p)` on a CRC failure | `host/imu_parser.c` | skip one byte, not 23: a real frame may start inside the bad one |
+| `(uint16_t)(seq - last_seq - 1u)` | `host/imu_parser.c` | 16-bit unsigned arithmetic gives the right answer across the 65535 → 0 wrap |
+
+### How the tests work and what each one proves
+
+| Test | How it works | What it proves |
+|---|---|---|
+| M5 L0 | packs frames and checks every byte offset; round-trips 10,000 random samples through the parser; feeds it garbage | the format matches the spec, and the parser neither loses nor invents frames |
+| M5 L1 | a fake Pico on a pseudo-terminal sends 12,000 frames, then repeats with faults injected | the reader's counters are exactly right, with no hardware involved |
+| M5 L2 | the real Pico streams for 20 s; the reader's CSV is checked against the sine model | measured: 4001 frames, 200.00 Hz, every `t_us` step exactly 5000 µs, 0 CRC errors, 0 lost |
+| M5 L2 (mouse) | the 30 s mouse script is replayed while the reader is running | HID and CDC do not disturb each other: 14 clicks, 1000 counts, 0 frames lost |
+
+### Quiz
+
+**Q1. A CRC error is reported but the frame count is exactly right. How can that be?**
+The parser found `AA 55` inside ordinary data (for example a `seq` of 0x55AA is sent as the bytes AA 55), took it for a frame start, and the CRC rejected it. It then skipped one byte and found the real frames behind it. A false start costs a counted error but no data. It only happens after the parser has lost its place, which is why the fault-injection rules avoid creating such pairs.
+
+**Q2. The reader is closed for 10 s and then reopened. What does it report, and is that right?**
+While it is closed the Pico discards about 2000 samples but keeps numbering them. On reopening, the reader takes the first frame as a new baseline and reports no gap, because a fresh open has no "previous" frame. Within one open session every loss is counted. If you need losses across sessions, compare the first `seq` with the last one of the previous session.
+
+**Q3. Why does the 16-bit CRC make a silent wrong sample unlikely but not impossible?**
+A corrupted frame passes only if its 16-bit CRC happens to match: 1 chance in 65,536 for random corruption (and never for a single flipped bit, which this CRC always catches). At one corrupted frame per minute that is one bad sample per 45 days. USB already has its own CRC, so in practice corruption only appears after a resync or with a second program reading the port.
+
+### Experiments worth trying
+
+1. Run the reader and unplug the Pico for a few seconds: `host/build/imu_reader /dev/serial/by-id/usb-Ant_Theremin_Mouse_*-if00`. Watch it report the unplug, reconnect, and count `reconnects=1`.
+2. Set `CFG_IMU_QUEUE_SIZE` to 2 in `firmware/config.h`, flash SIM and run `./bench/run.sh M5`. If "frames lost" stays at 0, the main loop is keeping up with a nearly empty queue; add `busy_wait_ms(20)` to the main loop and watch the gaps appear.

@@ -13,7 +13,7 @@ How to check each part of the Theremin Mouse on its own, then step by step up to
 | M2 joystick scroll | ☑ | – | ☑ | ☐ | – | – |
 | M3 optical cursor | ☑ | – | ☑ | ☐ | – | – |
 | M4 IMU text | ☑ | – | ☑ | ☐ | – | – |
-| M5 packets + reader | ☑ | ☑ | · | – | · | – |
+| M5 packets + reader | ☑ | ☑ | ☑ | – | ☐ | – |
 | M6 hardening | – | – | – | – | – | · |
 
 The L0 tests for M2–M5 pass already because the logic modules exist; those milestones still need their firmware and their L2/L3 tests.
@@ -64,7 +64,7 @@ Run everything from the repo root (`src/`). Each test prints PASS, FAIL or SKIP 
 
 ### M0-L2 hello at 1 Hz
 - **Goal:** the firmware is alive and its timing is right.
-- **Setup:** Pico plugged in, any firmware (SIM or HW).
+- **Setup:** Pico plugged in. The bench flashes SIM firmware if needed.
 - **Run:** `./bench/run.sh M0`
 - **Do:** look at the LED and answer the y/n question.
 - **Pass if:** 10 to 13 `hello` lines arrive in 12 s, the rate is 0.95 to 1.05 Hz, and the LED changes state once a second.
@@ -200,15 +200,15 @@ Run everything from the repo root (`src/`). Each test prints PASS, FAIL or SKIP 
   1. Scaling wrong: the range table in `common/scaling.c` does not match the MPU-6050 datasheet.
   2. Sine error above 1 LSB: the phase calculation in `common/sim_data.c` was changed.
 
-### M4-L2 IMU text follows the sine model
-- **Goal:** IMU samples travel from the 200 Hz tick to the serial port with correct values and timestamps.
+### M4-L2 IMU samples follow the sine model
+- **Goal:** IMU samples travel from the 200 Hz tick to the PC with correct values and timestamps. (Since milestone 5 they arrive as packets, read by `host/build/imu_reader`.)
 - **Setup:** Pico plugged in. The bench flashes SIM firmware if needed.
 - **Run:** `./bench/run.sh M4` (the four `M4 L2` lines; about 6 s)
 - **Do:** nothing.
-- **Pass if:** 200 to 260 `imu` lines in 5 s; the rate from `t_us` is 49.5 to 50.5 lines/s; `ax` matches 8192·sin(2π·t) within 1 count; no line has a wrong `ay`, `az`, `gx`, `gy` or `gz`.
+- **Pass if:** 900 to 1010 samples in 5 s; `ax` matches 8192·sin(2π·t) within 1 count; no sample has a wrong `ay`, `az`, `gx`, `gy` or `gz`.
 - **If it fails:**
-  1. Far fewer lines than 200: another program is reading the port, or debug text is being dropped. Close the monitor and any `cat`.
-  2. Rate is not 50: `CFG_IMU_TICK_DIV` or `CFG_IMU_PRINT_DIV` in `firmware/config.h` was changed.
+  1. Far fewer than 900 samples: another program is reading the port. Close the monitor and any other reader.
+  2. 0 samples: the reader did not build. Run `make -C host` and read the error.
 
 ### M4-L3 real IMU
 - **Goal:** the real MPU-6050 is wired, scaled correctly on all three axes, and its gyro measures rotation.
@@ -240,6 +240,18 @@ Run everything from the repo root (`src/`). Each test prints PASS, FAIL or SKIP 
   1. Clean run a few frames short: the PC was heavily loaded and the reader started late. Run it again.
   2. Fault counts differ: read the `INJECTED` and `TOTAL` lines by running `bench/build/pico_sim` and `host/build/imu_reader` by hand.
 
+### M5-L2 framed stream from the Pico
+- **Goal:** the Pico streams IMU packets at a steady 200 Hz with nothing lost, and the mouse is unaffected by whether the reader is running.
+- **Setup:** one-time setup done. Pico plugged in. The bench flashes SIM firmware if needed.
+- **Run:** `./bench/run.sh M5` (the `M5 L2` lines; about 1 minute, after the 2-minute L1 part)
+- **Do:** nothing.
+- **Pass if:** 3900 to 4010 frames in 20 s; rate 198 to 202 Hz; every `t_us` step within 99 µs of 5000; 0 CRC errors; 0 frames lost; values within 1 count of the sine model; 130 to 150 log packets; with the reader open, 14 left clicks, Σ|REL_X| = 1000 and 0 frames lost during the mouse script.
+- **If it fails:**
+  1. Frames lost above 0: the main loop is being held up. Look for anything slow added to the main loop in `firmware/main.c`.
+  2. Rate right but CRC errors above 0: a second program is reading the same port and stealing bytes. Close it.
+
+**Reading the stream by hand:** `host/build/imu_reader /dev/serial/by-id/usb-Ant_Theremin_Mouse_*-if00 --csv out.csv`. Plain `cat` now shows binary; debug text arrives as `LOG:` lines in the reader.
+
 ---
 
 ## Not built yet
@@ -248,5 +260,5 @@ These tests are defined in the spec and appear as SKIP in `run.sh`. Each gets a 
 
 | Test | Needs |
 |---|---|
-| M5-L2 200 Hz framed stream from the Pico; L4 integration | milestone 5 |
+| L4 integration (all real sensors together) | the L3 tests passing first |
 | M6-L5 soak, unplug/replug and reflash | milestone 6 |

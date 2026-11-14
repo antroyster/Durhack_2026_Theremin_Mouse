@@ -57,6 +57,8 @@ set(APP_SOURCES
     ${COMMON_DIR}/mouse_report.c    # builds the 4-byte HID report, "send only on change"
     ${COMMON_DIR}/scroll.c          # joystick deadzone and scroll accumulator
     ${COMMON_DIR}/carry.c           # optical clamp-and-carry
+    ${COMMON_DIR}/crc16.c           # CRC-16/CCITT-FALSE for the packets
+    ${COMMON_DIR}/imu_frame.c       # packs IMU and log frames
 )
 
 # Add exactly one sensor backend; both implement sensors.h.

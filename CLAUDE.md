@@ -45,6 +45,7 @@ After each change, add "What I did and why": an ASCII diagram or equation where 
 After each milestone, add a LEARNING.md entry with: what was built, how it works (diagram or equation where it helps), the key lines of code explained, 3 quiz questions with full answers, and any experiment worth trying.
 
 ## Current milestone
-5
+6
 
-Still to validate on real hardware (Ant chose to continue and validate later): M1 L3 real buttons (left gave 0 events on first try), M2 L3 real joystick, M3 L3 real optical sensor, M4 L3 real IMU. Milestones 1-4 pass L0 and L2.
+Still to validate on real hardware (Ant chose to continue and validate later): M1 L3 real buttons (left gave 0 events on first try), M2 L3 real joystick, M3 L3 real optical sensor, M4 L3 real IMU. Milestones 1-5 pass L0, L1 and L2.
+Since milestone 5 the CDC port carries binary packets: read it with host/build/imu_reader, not cat.

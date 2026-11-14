@@ -1,6 +1,6 @@
 /*
- * Milestone 4: composite USB device = HID mouse (buttons, scroll wheel, x/y) + CDC serial
- * with a text printout of the IMU.
+ * Milestone 5: composite USB device = HID mouse (buttons, scroll wheel, x/y) + CDC serial
+ * carrying framed packets: 200 Hz IMU frames (type 0x01) and debug text (type 0x02).
  *
  *   1 kHz timer interrupt                      main loop (never blocks)
  *   +--------------------------------+         +----------------------------------+
@@ -30,6 +30,7 @@
 #include "config.h"
 #include "dbg.h"
 #include "debounce.h"
+#include "imu_frame.h"
 #include "mouse_report.h"
 #include "scroll.h"
 #include "sensors.h"
@@ -67,12 +68,13 @@ static bool s_opt_ok;                 /* optical sensor present */
  *      tail --> [ s ][ s ][ s ][   ][   ] <-- head
  *      main loop takes here        interrupt puts here
  */
-typedef struct { uint32_t t_us; int16_t a[3], g[3]; } imu_q_t;
+typedef struct { uint16_t seq; uint32_t t_us; int16_t a[3], g[3]; } imu_q_t;
 static imu_q_t s_imu_q[CFG_IMU_QUEUE_SIZE];
 static volatile uint8_t  s_imu_head, s_imu_tail;
 static volatile uint32_t g_imu_dropped; /* samples lost because the queue was full */
 static bool    s_imu_ok;                /* IMU present */
 static uint8_t s_imu_div;               /* counts ticks: every 5th one is an IMU sample */
+static uint16_t s_imu_seq;              /* +1 for every sample taken, sent or not: a loss shows as a gap */
 
 static repeating_timer_t s_tick_timer;
 
@@ -118,11 +120,13 @@ static bool tick_cb(repeating_timer_t *rt) {
 
     if (s_imu_ok && ++s_imu_div >= CFG_IMU_TICK_DIV) { /* every 5th tick = 200 Hz */
         s_imu_div = 0;
+        uint16_t seq = s_imu_seq++;
         uint8_t head = s_imu_head;
         uint8_t next = (uint8_t)((head + 1u) % CFG_IMU_QUEUE_SIZE);
         if (next == s_imu_tail) {
             g_imu_dropped++;                 /* main loop is behind: drop this one, keep going */
         } else {
+            s_imu_q[head].seq = seq;
             s_imu_q[head].t_us = now_us;     /* time of the tick, before the read (spec P9) */
             sensors_imu_raw(s_imu_q[head].a, s_imu_q[head].g);
             s_imu_head = next;               /* publish only after the slot is completely filled */
@@ -290,23 +294,22 @@ static bool led_error_pattern(unsigned n_blinks, uint32_t now_ms) {
 
 /* ----------------------------------------------------------------- IMU ---- */
 
-/* Take queued samples and print every CFG_IMU_PRINT_DIV-th one as text:
- * raw counts, then the same values scaled to milli-g and whole deg/s
- * (a = raw / S_a, w = raw / S_g; integers only, so no float printf). */
+/* Take queued samples and send each one as a 23-byte IMU frame (protocol.h).
+ * Never blocks: with no listener, or no room in the USB buffer, the sample is
+ * discarded. Its seq number was already used, so the PC sees the loss as a gap. */
 static void imu_task(void) {
-    static uint8_t n;
+    bool wrote = false;
     while (s_imu_tail != s_imu_head) {
         imu_q_t s = s_imu_q[s_imu_tail];
         s_imu_tail = (uint8_t)((s_imu_tail + 1u) % CFG_IMU_QUEUE_SIZE);
-        if (++n < CFG_IMU_PRINT_DIV) continue;
-        n = 0;
-        const int32_t sa = 32768 / CFG_IMU_ACCEL_RANGE_G;        /* LSB per g: 16384 at +/-2 g */
-        const int32_t sg10 = 327680 / CFG_IMU_GYRO_RANGE_DPS;    /* 10 x LSB per deg/s: 1310 at +/-250 */
-        dbg_printf("imu t_us=%lu ax=%d ay=%d az=%d gx=%d gy=%d gz=%d mg=%ld,%ld,%ld dps=%ld,%ld,%ld\n",
-                   (unsigned long)s.t_us, s.a[0], s.a[1], s.a[2], s.g[0], s.g[1], s.g[2],
-                   (long)(s.a[0] * 1000 / sa), (long)(s.a[1] * 1000 / sa), (long)(s.a[2] * 1000 / sa),
-                   (long)(s.g[0] * 10 / sg10), (long)(s.g[1] * 10 / sg10), (long)(s.g[2] * 10 / sg10));
+
+        if (!tud_cdc_connected() || tud_cdc_write_available() < PROTO_IMU_FRAME_SIZE) continue;
+        uint8_t frame[PROTO_IMU_FRAME_SIZE];
+        proto_pack_imu(frame, s.seq, s.t_us, s.a, s.g);
+        tud_cdc_write(frame, PROTO_IMU_FRAME_SIZE);
+        wrote = true;
     }
+    if (wrote) tud_cdc_write_flush(); /* send now; do not wait for a full 64-byte USB packet */
 }
 
 static void status_task(void) {
@@ -386,7 +389,7 @@ int main(void) {
         tud_task();     /* USB stack: enumeration, control requests, transfer completions */
         cdc_rx_task();  /* commands from the PC: @RUN, @STOP */
         hid_task();     /* mouse report, only on a change */
-        imu_task();     /* IMU samples: text printout */
+        imu_task();     /* IMU samples: one frame each */
         status_task();  /* 1 Hz status line, LED, button event text */
     }
 }
