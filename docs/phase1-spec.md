@@ -155,9 +155,9 @@ Every milestone (0–6) must be testable with simulated data. A milestone is onl
 ### 3. Simulated data
 All sim data is deterministic, so expected results can be calculated.
 
-**Safety rule:** a SIM build does nothing with the mouse until the PC sends the byte `r` on the CDC port. It then plays one 30 s cycle and goes idle again. This stops a SIM board clicking and pasting on the desktop by itself. The bench also grabs the mouse device (`evtest --grab`) so scripted events reach the test and not the desktop. The IMU sim is not gated; it runs from boot.
+**Safety rule:** a SIM build does nothing with the mouse until the PC sends the 5 bytes `@RUN` + newline on the CDC port. It then plays one 30 s cycle and goes idle again. This stops a SIM board clicking and pasting on the desktop by itself. The trigger is a sequence, not one letter, because a serial port opened without `stty raw -echo` echoes the Pico's own text back to it; the firmware never prints `@RUN`, so an echo cannot start the script. The bench also grabs the mouse device (`evtest --grab`) so scripted events reach the test and not the desktop. The IMU sim is not gated; it runs from boot.
 
-τ is the time since the `r` command. Buttons, joystick and optical use τ; the IMU uses `t_us`.
+τ is the time since the `@RUN` command. Buttons, joystick and optical use τ; the IMU uses `t_us`.
 
 | Channel | Script | Expected over one cycle |
 |---|---|---|
@@ -176,7 +176,7 @@ All sim data is deterministic, so expected results can be calculated.
 
 Check the mouse objectively with `evtest` (sum BTN_*/REL_X/REL_Y/REL_WHEEL events), not by watching the cursor. Check descriptors with `lsusb -v`. Tools: bash + C, evtest, usbutils (`sudo apt install evtest usbutils`).
 
-Fault-injection rules for L1, so the counts are exact: a "bad CRC" fault flips one bit in bytes 2–22 of a frame (never the sync bytes); noise bytes never contain 0xAA; a "dropped" fault leaves a frame out. Expected reader counts: CRC errors = bad-CRC faults; frames lost = bad-CRC faults + dropped faults.
+Fault-injection rules for L1, so the counts are exact: a "bad CRC" fault flips one bit in bytes 3–22 of a frame (never the sync or type bytes) and must not create a 0xAA 0x55 pair inside the frame; noise bytes never contain 0xAA or 0x55; a "dropped" fault leaves a frame out; the first and last frames of a run are never faulted. Expected reader counts: CRC errors = bad-CRC faults; frames lost = bad-CRC faults + dropped faults.
 
 ### 5. Pass criteria per milestone
 - **M0:** L2 – "hello" arrives at 1 Hz ±5% over 10 s (scripted check); LED toggles.
