@@ -12,7 +12,7 @@ How to check each part of the Theremin Mouse on its own, then step by step up to
 | M1 composite + buttons | ☑ | – | ☑ | ☐ | – | – |
 | M2 joystick scroll | ☑ | – | ☑ | ☐ | – | – |
 | M3 optical cursor | ☑ | – | ☑ | ☐ | – | – |
-| M4 IMU text | ☑ | – | · | · | – | – |
+| M4 IMU text | ☑ | – | ☑ | ☐ | – | – |
 | M5 packets + reader | ☑ | ☑ | · | – | · | – |
 | M6 hardening | – | – | – | – | – | · |
 
@@ -200,6 +200,26 @@ Run everything from the repo root (`src/`). Each test prints PASS, FAIL or SKIP 
   1. Scaling wrong: the range table in `common/scaling.c` does not match the MPU-6050 datasheet.
   2. Sine error above 1 LSB: the phase calculation in `common/sim_data.c` was changed.
 
+### M4-L2 IMU text follows the sine model
+- **Goal:** IMU samples travel from the 200 Hz tick to the serial port with correct values and timestamps.
+- **Setup:** Pico plugged in. The bench flashes SIM firmware if needed.
+- **Run:** `./bench/run.sh M4` (the four `M4 L2` lines; about 6 s)
+- **Do:** nothing.
+- **Pass if:** 200 to 260 `imu` lines in 5 s; the rate from `t_us` is 49.5 to 50.5 lines/s; `ax` matches 8192·sin(2π·t) within 1 count; no line has a wrong `ay`, `az`, `gx`, `gy` or `gz`.
+- **If it fails:**
+  1. Far fewer lines than 200: another program is reading the port, or debug text is being dropped. Close the monitor and any `cat`.
+  2. Rate is not 50: `CFG_IMU_TICK_DIV` or `CFG_IMU_PRINT_DIV` in `firmware/config.h` was changed.
+
+### M4-L3 real IMU
+- **Goal:** the real MPU-6050 is wired, scaled correctly on all three axes, and its gyro measures rotation.
+- **Setup:** IMU wired to I2C0 (SDA GPIO8, SCL GPIO9, 3V3, GND). The bench flashes HW firmware.
+- **Run:** `./bench/run.sh M4` in a terminal
+- **Do:** follow the prompts: hold the IMU still in six orientations (each axis up, then down), then lay it flat and turn it 90° anticlockwise within 4 s.
+- **Pass if:** WHO_AM_I = 104 (0x68); each face reads +1 g or −1 g within ±0.05 g on its axis; gyro bias at rest is within ±20 °/s on each axis (the datasheet's zero-rate figure); the turn integrates to 80° to 100°.
+- **If it fails:**
+  1. WHO_AM_I is 0: no answer on I2C. Check SDA and SCL are not swapped and the module has power. The LED blinks four times, pauses, and repeats while the IMU is missing.
+  2. The turn reads about −90: you turned clockwise, or the module is mounted upside down.
+
 ### M5-L0 CRC, frames and parser
 - **Goal:** the packet format is exactly what the spec says, and the parser survives garbage.
 - **Setup:** PC only.
@@ -228,6 +248,5 @@ These tests are defined in the spec and appear as SKIP in `run.sh`. Each gets a 
 
 | Test | Needs |
 |---|---|
-| M4-L2 text printout vs sine model; M4-L3 six-face test and 90° turn | milestone 4 |
 | M5-L2 200 Hz framed stream from the Pico; L4 integration | milestone 5 |
 | M6-L5 soak, unplug/replug and reflash | milestone 6 |

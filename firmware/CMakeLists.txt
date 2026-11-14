@@ -65,7 +65,7 @@ if(SENSORS STREQUAL "SIM")
     list(APPEND APP_SOURCES sensors_sim.c ${COMMON_DIR}/sim_data.c)
 else()
     # Real sensors.
-    list(APPEND APP_SOURCES sensors_hw.c opt_pmw3360.c)
+    list(APPEND APP_SOURCES sensors_hw.c opt_pmw3360.c imu_mpu6050.c)
 endif()
 
 # Our firmware executable.
@@ -92,6 +92,7 @@ target_compile_definitions(theremin_mouse PRIVATE
 #   hardware_gpio    button inputs and the LED
 #   hardware_adc     joystick Y axis
 #   hardware_spi     optical sensor
+#   hardware_i2c     IMU
 #   hardware_sync    save_and_disable_interrupts() around the shared wheel total
 #   tinyusb_device   TinyUSB device stack with OUR descriptors (usb_descriptors.c, tusb_config.h)
 # tinyusb_board is NOT linked: it is the TinyUSB examples' board layer (its own LED/UART set-up on
@@ -102,6 +103,7 @@ target_link_libraries(theremin_mouse
     pico_bootrom
     hardware_gpio
     hardware_adc
+    hardware_i2c
     hardware_spi
     hardware_sync
     tinyusb_device)

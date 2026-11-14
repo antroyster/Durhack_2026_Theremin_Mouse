@@ -82,5 +82,7 @@
 #define CFG_IMU_RATE_HZ         200u
 #define CFG_IMU_DLPF_HZ         44u /* digital low-pass filter bandwidth */
 #define CFG_IMU_TICK_DIV        5u  /* IMU sampled on every 5th 1 kHz tick = 200 Hz */
+#define CFG_IMU_PRINT_DIV       4u  /* text printout of every 4th sample = 50 lines per second */
+#define CFG_IMU_QUEUE_SIZE      32u /* samples waiting between the tick and the main loop */
 
 #endif /* CONFIG_H */

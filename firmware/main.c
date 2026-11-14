@@ -1,5 +1,6 @@
 /*
- * Milestone 3: composite USB device = HID mouse (buttons, scroll wheel, x/y) + CDC serial.
+ * Milestone 4: composite USB device = HID mouse (buttons, scroll wheel, x/y) + CDC serial
+ * with a text printout of the IMU.
  *
  *   1 kHz timer interrupt                      main loop (never blocks)
  *   +--------------------------------+         +----------------------------------+
@@ -59,6 +60,20 @@ static bool     s_joy_ok;             /* joystick present: scroll enabled */
 static volatile int32_t g_dx_pending, g_dy_pending;
 static bool s_opt_ok;                 /* optical sensor present */
 
+/* IMU samples travel from the interrupt to the main loop through a small ring
+ * buffer. One side only writes "head", the other only writes "tail", and each
+ * index is one byte, so no lock is needed (single producer, single consumer):
+ *
+ *      tail --> [ s ][ s ][ s ][   ][   ] <-- head
+ *      main loop takes here        interrupt puts here
+ */
+typedef struct { uint32_t t_us; int16_t a[3], g[3]; } imu_q_t;
+static imu_q_t s_imu_q[CFG_IMU_QUEUE_SIZE];
+static volatile uint8_t  s_imu_head, s_imu_tail;
+static volatile uint32_t g_imu_dropped; /* samples lost because the queue was full */
+static bool    s_imu_ok;                /* IMU present */
+static uint8_t s_imu_div;               /* counts ticks: every 5th one is an IMU sample */
+
 static repeating_timer_t s_tick_timer;
 
 /* False if the tick timer could not be started: nothing samples the buttons
@@ -99,6 +114,19 @@ static bool tick_cb(repeating_timer_t *rt) {
         sensors_optical_delta(&dx, &dy); /* counts since the previous tick */
         g_dx_pending += dx;
         g_dy_pending += dy;
+    }
+
+    if (s_imu_ok && ++s_imu_div >= CFG_IMU_TICK_DIV) { /* every 5th tick = 200 Hz */
+        s_imu_div = 0;
+        uint8_t head = s_imu_head;
+        uint8_t next = (uint8_t)((head + 1u) % CFG_IMU_QUEUE_SIZE);
+        if (next == s_imu_tail) {
+            g_imu_dropped++;                 /* main loop is behind: drop this one, keep going */
+        } else {
+            s_imu_q[head].t_us = now_us;     /* time of the tick, before the read (spec P9) */
+            sensors_imu_raw(s_imu_q[head].a, s_imu_q[head].g);
+            s_imu_head = next;               /* publish only after the slot is completely filled */
+        }
     }
 
     return true; /* keep the timer repeating */
@@ -260,6 +288,27 @@ static bool led_error_pattern(unsigned n_blinks, uint32_t now_ms) {
     return (p < blink_part) && ((p % CFG_LED_BLINK_MS) < CFG_LED_BLINK_ON_MS);
 }
 
+/* ----------------------------------------------------------------- IMU ---- */
+
+/* Take queued samples and print every CFG_IMU_PRINT_DIV-th one as text:
+ * raw counts, then the same values scaled to milli-g and whole deg/s
+ * (a = raw / S_a, w = raw / S_g; integers only, so no float printf). */
+static void imu_task(void) {
+    static uint8_t n;
+    while (s_imu_tail != s_imu_head) {
+        imu_q_t s = s_imu_q[s_imu_tail];
+        s_imu_tail = (uint8_t)((s_imu_tail + 1u) % CFG_IMU_QUEUE_SIZE);
+        if (++n < CFG_IMU_PRINT_DIV) continue;
+        n = 0;
+        const int32_t sa = 32768 / CFG_IMU_ACCEL_RANGE_G;        /* LSB per g: 16384 at +/-2 g */
+        const int32_t sg10 = 327680 / CFG_IMU_GYRO_RANGE_DPS;    /* 10 x LSB per deg/s: 1310 at +/-250 */
+        dbg_printf("imu t_us=%lu ax=%d ay=%d az=%d gx=%d gy=%d gz=%d mg=%ld,%ld,%ld dps=%ld,%ld,%ld\n",
+                   (unsigned long)s.t_us, s.a[0], s.a[1], s.a[2], s.g[0], s.g[1], s.g[2],
+                   (long)(s.a[0] * 1000 / sa), (long)(s.a[1] * 1000 / sa), (long)(s.a[2] * 1000 / sa),
+                   (long)(s.g[0] * 10 / sg10), (long)(s.g[1] * 10 / sg10), (long)(s.g[2] * 10 / sg10));
+    }
+}
+
 static void status_task(void) {
     static absolute_time_t next_due;   /* deadline of the next 1 Hz slot */
     static bool started = false;
@@ -322,6 +371,7 @@ int main(void) {
     carry_init(&s_carry_x);
     carry_init(&s_carry_y);
     s_opt_ok = (sensors_status(SENSOR_OPT) == SENSOR_OK);
+    s_imu_ok = (sensors_status(SENSOR_IMU) == SENSOR_OK);
     s_joy_ok = (sensors_status(SENSOR_JOY) == SENSOR_OK);
     s_joy_v0 = sensors_joystick_centre();
     cmd_matcher_init(&s_cmd);
@@ -336,6 +386,7 @@ int main(void) {
         tud_task();     /* USB stack: enumeration, control requests, transfer completions */
         cdc_rx_task();  /* commands from the PC: @RUN, @STOP */
         hid_task();     /* mouse report, only on a change */
+        imu_task();     /* IMU samples: text printout */
         status_task();  /* 1 Hz status line, LED, button event text */
     }
 }

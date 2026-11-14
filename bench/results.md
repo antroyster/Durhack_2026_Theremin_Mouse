@@ -443,3 +443,39 @@ PASS  M3 L2  evtest: sum of |REL_Y| (2 bursts + 2 sides)        measured=1000  l
 PASS  M3 L2  evtest: largest |REL_X| or |REL_Y| in one event    measured=127  limit=100..127
 SKIP  M3 L3  real optical sensor: ID and 10 cm ruler            measured=-  limit=needs you at the keyboard: run it in a terminal
 ```
+
+## 2026-11-14 22:13:52  git=83029d6+dirty  ./bench/run.sh M4
+
+M4: 28 pass, 0 fail, 1 skip -> NOT DONE (1 skipped)
+
+```
+PASS  M4 L0 accel sensitivity at +/-2 g [LSB/g]            measured=16384  limit=16384
+PASS  M4 L0 accel sensitivity at +/-4 g [LSB/g]            measured=8192  limit=8192
+PASS  M4 L0 accel sensitivity at +/-8 g [LSB/g]            measured=4096  limit=4096
+PASS  M4 L0 accel sensitivity at +/-16 g [LSB/g]           measured=2048  limit=2048
+PASS  M4 L0 gyro sensitivity at +/-250 dps [LSB/dps]       measured=131  limit=131
+PASS  M4 L0 gyro sensitivity at +/-2000 dps [LSB/dps]      measured=16.4  limit=16.39..16.41
+PASS  M4 L0 invalid range gives 0                          measured=0  limit=0
+PASS  M4 L0 raw 16384 at +/-2 g [g]                        measured=1  limit=1
+PASS  M4 L0 raw -16384 at +/-2 g [g]                       measured=-1  limit=-1
+PASS  M4 L0 raw 8192 at +/-2 g [g]                         measured=0.5  limit=0.5
+PASS  M4 L0 raw 32767 at +/-2 g [g]                        measured=1.99994  limit=1.999..2
+PASS  M4 L0 raw 131 at +/-250 dps [dps]                    measured=1  limit=1
+PASS  M4 L0 raw 32767 at +/-250 dps [dps]                  measured=250.13  limit=250..250.2
+PASS  M4 L0 sim ax at t = 0.25 s [counts]                  measured=8192  limit=8191..8192
+PASS  M4 L0 sim ay [counts]                                measured=0  limit=0
+PASS  M4 L0 sim az [counts]                                measured=16384  limit=16384
+PASS  M4 L0 sim gz at t = 0.25 s [counts]                  measured=11790  limit=11790
+PASS  M4 L0 sim ax at t = 0.25 s [g]                       measured=0.5  limit=0.499..0.501
+PASS  M4 L0 sim gz at t = 0.25 s [dps]                     measured=90  limit=90
+PASS  M4 L0 sim ax at t = 0.75 s [counts]                  measured=-8192  limit=-8192..-8191
+PASS  M4 L0 sim gz at t = 0.75 s [counts]                  measured=-11790  limit=-11790
+PASS  M4 L0 sim ax at t = 3 s [counts]                     measured=0  limit=0
+PASS  M4 L0 sim ax vs double model over 10 s: worst error [LSB] measured=0  limit=0..1
+PASS  M4 L0 sim gz square wave over 10 s: sum (turns cancel) measured=0  limit=0
+PASS  M4 L2  IMU text lines in 5 s (50 per second)              measured=250  limit=200..260
+PASS  M4 L2  print rate from t_us [lines/s]                     measured=50.0  limit=49.5..50.5
+PASS  M4 L2  ax vs sine model: worst error [LSB]                measured=0  limit=0..1
+PASS  M4 L2  lines where ay, az, gx, gy or gz differ from the model measured=0  limit=0
+SKIP  M4 L3  real IMU: ID, 6 faces, gyro bias, 90 degree turn   measured=-  limit=needs you at the keyboard: run it in a terminal
+```

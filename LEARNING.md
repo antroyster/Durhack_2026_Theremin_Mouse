@@ -385,3 +385,60 @@ Polling costs about 100 µs in every 1 ms tick (10% of the CPU) but needs no ext
 
 1. In `common/carry.c` change the clamp to ±50 and run `make -C tests M=m3`: the "reports used" check fails (6 reports, not 3) while every sum still passes. Restore it.
 2. With the sensor wired and HW firmware, change `CFG_OPT_CPI` to 800 and rerun `./bench/run.sh M3`: the ruler total should halve and fail the limit.
+
+---
+
+## Milestone 4: IMU read and text printout (2026-11-14)
+
+### What was built
+
+The MPU-6050 is read at 200 Hz and every 4th sample is printed as text: raw counts plus the same values in milli-g and °/s. `firmware/imu_mpu6050.c` is the driver.
+
+### How it works
+
+```
+tick interrupt, every 5th tick (200 Hz):         main loop:
+   t_us = time of the tick                          while queue not empty:
+   read 14 bytes over I2C (about 0.45 ms)              take a sample
+   put { t_us, a[3], g[3] } in the queue  ------->     print every 4th one
+
+queue (ring buffer, 32 slots):   tail --> [s][s][s][ ][ ] <-- head
+                                 main loop only moves tail; the interrupt only moves head
+```
+
+Scaling: a [g] = raw / S_a and ω [°/s] = raw / S_g. At ±2 g, S_a = 32768 / 2 = 16384 counts per g. At ±250 °/s, S_g = 32768 / 250 ≈ 131 counts per °/s.
+
+### Key lines explained
+
+| Line | File | Why it is there |
+|---|---|---|
+| `a[i] = (int16_t)(b[2*i] << 8 \| b[2*i+1]);` | `firmware/imu_mpu6050.c` | the MPU-6050 sends the high byte first (big-endian); our packets are little-endian, so the bytes are assembled, never copied |
+| `g[i] = ... b[8 + 2*i] ...` | `firmware/imu_mpu6050.c` | the gyro starts at byte 8: bytes 6–7 are the temperature |
+| `reg_write(REG_SMPLRT_DIV, 1000 / 200 - 1)` | `firmware/imu_mpu6050.c` | output rate = 1 kHz / (1 + divider) = 200 Hz |
+| `i2c_read_timeout_us(..., 2000)` | `firmware/imu_mpu6050.c` | a stuck bus gives up after 2 ms and cannot hang the interrupt |
+| `s_imu_head = next;` after filling the slot | `firmware/main.c` | the sample becomes visible to the main loop only when it is complete |
+| `if (next == s_imu_tail) g_imu_dropped++;` | `firmware/main.c` | a full queue drops the new sample and counts it; it never blocks |
+
+### How the tests work and what each one proves
+
+| Test | How it works | What it proves |
+|---|---|---|
+| M4 L0 | converts known raw values and compares with datasheet numbers; compares the sim against an independent double-precision sine | the scaling constants and the simulated signal are right |
+| M4 L2 | reads 5 s of `imu` lines and recomputes each value from its own `t_us` | the timestamp and the data belong together, and no sample is altered between tick, queue and text (measured: 250 lines, worst error 0) |
+| M4 L3 | six still orientations, then a timed 90° turn | each real axis reads ±1 g, and the gyro's scale is right |
+
+### Quiz
+
+**Q1. Why is `t_us` taken at the tick and not when the I2C read finishes?**
+The tick is regular to within microseconds; the read takes about 0.45 ms and varies. Stamping at the tick gives timestamps exactly 5000 µs apart, which the host can use to integrate or to detect lost samples. The small fixed delay between tick and actual sampling is a constant offset and does no harm.
+
+**Q2. The six-face test reads +0.98 g on one face and −1.03 g on the opposite face. What are the offset and scale error of that axis?**
+Offset = (a₊ + a₋) / 2 = (0.98 − 1.03) / 2 = −0.025 g. Scale = (a₊ − a₋) / 2 = (0.98 + 1.03) / 2 = 1.005, so +0.5%. This is why the test uses both directions of each axis: one reading cannot separate the two errors.
+
+**Q3. A gyro bias of 2 °/s is left uncorrected. How far out is the angle after the 4 s turn test, and after a minute?**
+Angle error = bias × time: 2 × 4 = 8° after the test (most of the ±10° allowance), and 120° after a minute. A gyro alone cannot hold an angle for long; that is the job of sensor fusion in a later phase.
+
+### Experiments worth trying
+
+1. Set `CFG_IMU_PRINT_DIV` to 1 in `firmware/config.h` (200 lines per second) and rerun `./bench/run.sh M4`. If the line count comes up short, text is being dropped for lack of room: that is the reason milestone 5 moves to compact binary packets.
+2. With the IMU wired, lay it flat and `cat` the port: `mg=` should read about `0,0,1000`. Tilt it 30° and check the value against 1000 × sin 30° = 500.

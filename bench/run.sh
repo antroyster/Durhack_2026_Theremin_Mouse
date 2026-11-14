@@ -353,6 +353,66 @@ m3_l3() {
     check_range "M3 L3" "10 cm to the right: REL_Y total (sideways error)" "$y" -630 630
 }
 
+# ---- IMU text lines: "imu t_us=N ax=N ay=N az=N gx=N gy=N gz=N ..." ----
+# imu_awk FILE 'END-program': runs awk over the imu lines with fields in v["ax"] etc.
+imu_awk() {
+    awk '/ imu t_us=/ { for (i = 3; i <= 9; i++) { split($i, kv, "="); v[kv[1]] = kv[2] + 0 } n++; '"$2"' }
+         END { '"$3"' }' "$1"
+}
+# Mean of one field in g (accel) or deg/s (gyro): imu_mean FILE ax
+imu_mean() {
+    imu_awk "$1" 's += v["'"$2"'"]' 'if (!n) { print "none"; exit } d = ("'"$2"'" ~ /^a/) ? 16384 : 131; printf "%.3f", s / n / d'
+}
+
+m4_l2() {
+    if ! ensure_fw SIM; then fail "M4 L2" "board runs the SIM firmware" "could not flash or find the Pico"; return; fi
+    local port; port="$(find_port)"
+    echo "[bench] reading the IMU text printout for 5 s ..."
+    capture "$port" 5 "$TMP/imu"
+    local res; res="$(imu_awk "$TMP/imu" '
+        ph = v["t_us"] % 1000000; m = 8192 * sin(6.283185307179586 * ph / 1000000)
+        m = (m < 0) ? -int(-m + 0.5) : int(m + 0.5)
+        e = v["ax"] - m; if (e < 0) e = -e; if (e > worst) worst = e
+        if (v["ay"] != 0 || v["az"] != 16384 || v["gx"] != 0 || v["gy"] != 0) bad++
+        if (v["gz"] != ((ph < 500000) ? 11790 : -11790)) bad++
+        if (n == 1) t0 = v["t_us"]; t1 = v["t_us"]' '
+        printf "%d %d %d %.1f", n, worst, bad, (n > 1 && t1 > t0) ? (n - 1) * 1000000 / (t1 - t0) : 0')"
+    local n worst bad rate; read -r n worst bad rate <<< "${res:-0 99 99 0}"
+    check_range "M4 L2" "IMU text lines in 5 s (50 per second)" "$n" 200 260
+    check_range "M4 L2" "print rate from t_us [lines/s]" "$rate" 49.5 50.5
+    check_range "M4 L2" "ax vs sine model: worst error [LSB]" "$worst" 0 1
+    check_eq "M4 L2" "lines where ay, az, gx, gy or gz differ from the model" "$bad" 0
+}
+
+m4_l3() {
+    if [ ! -t 0 ]; then skip "M4 L3" "real IMU: ID, 6 faces, gyro bias, 90 degree turn" "needs you at the keyboard: run it in a terminal"; return; fi
+    if ! ensure_fw HW; then fail "M4 L3" "board runs the HW firmware" "could not flash or find the Pico"; return; fi
+    local port who; port="$(find_port)"
+    who="$(grep ' info ' "$TMP/fw" | tail -1 | sed -n 's/.*imu_id=\(0x[0-9a-f]*\).*/\1/p')"
+    check_eq "M4 L3" "WHO_AM_I register (0x68 = 104)" "$(( ${who:-0} ))" 104
+    if [ "$(( ${who:-0} ))" != 104 ]; then return; fi
+
+    # Six faces: each axis in turn points up, then down. Gravity must read +/-1 g on it.
+    local face axis sign
+    for face in "+Z:az:1:flat on the desk, chip facing UP" "-Z:az:-1:upside down" "+X:ax:1:on its edge, X arrow pointing UP" \
+                "-X:ax:-1:on the opposite edge, X arrow pointing DOWN" "+Y:ay:1:on its end, Y arrow pointing UP" "-Y:ay:-1:on the other end, Y arrow pointing DOWN"; do
+        IFS=: read -r name axis sign text <<< "$face"
+        echo; read -r -p ">>> Hold the IMU still, $text. Press Enter. " _
+        capture "$port" 2 "$TMP/face"
+        local g lo hi; g="$(imu_mean "$TMP/face" "$axis")"
+        if [ "$sign" = 1 ]; then lo=0.95; hi=1.05; else lo=-1.05; hi=-0.95; fi
+        check_range "M4 L3" "face $name: $axis [g]" "$g" "$lo" "$hi"
+        if [ "$name" = "+Z" ]; then   # flat and still: also the gyro bias (datasheet zero-rate output: +/-20 deg/s)
+            local a; for a in gx gy gz; do check_range "M4 L3" "at rest: $a bias [deg/s]" "$(imu_mean "$TMP/face" "$a")" -20 20; done
+        fi
+    done
+
+    echo; read -r -p ">>> Lay it flat. Press Enter, then turn it 90 degrees anticlockwise (seen from above) within 4 s. " _
+    capture "$port" 4 "$TMP/turn"
+    local ang; ang="$(imu_awk "$TMP/turn" 'if (n > 1) { dt = v["t_us"] - tp; if (dt < 0) dt += 4294967296; a += v["gz"] / 131 * dt / 1000000 } tp = v["t_us"]' 'printf "%.1f", a')"
+    check_range "M4 L3" "90 degree turn: integrated gz [deg]" "${ang:-none}" 80 100
+}
+
 not_built() { skip "$1" "$2" "not built until milestone $3"; }
 
 # ---------- what runs for each target ----------
@@ -360,11 +420,9 @@ run_level() {
     case "$1" in
         L0) l0 ;;
         L1) m5_l1 ;;
-        L2) m0_l2; m2_l2; m3_l2; m1_l2
-            not_built "M4 L2" "IMU text printout follows the sine model" 4
+        L2) m0_l2; m4_l2; m2_l2; m3_l2; m1_l2
             not_built "M5 L2" "200 Hz framed stream from the Pico" 5 ;;
-        L3) m1_l3; m2_l3; m3_l3
-            not_built "M4 L3" "real IMU: ID register, 6-face test, 90 degree turn" 4 ;;
+        L3) m1_l3; m2_l3; m3_l3; m4_l3 ;;
         L4) not_built "L4" "everything real and integrated" 5 ;;
         L5) not_built "M6 L5" "10-minute soak, unplug/replug, reflash x3" 6 ;;
     esac
@@ -375,8 +433,7 @@ run_milestone() {
         M1) l0 m1; m1_l2; m1_l3 ;;
         M2) l0 m2; m2_l2; m2_l3 ;;
         M3) l0 m3; m3_l2; m3_l3 ;;
-        M4) l0 m4; not_built "M4 L2" "IMU text printout follows the sine model" 4
-            not_built "M4 L3" "real IMU: ID register, 6-face test, 90 degree turn" 4 ;;
+        M4) l0 m4; m4_l2; m4_l3 ;;
         M5) l0 m5; m5_l1; not_built "M5 L2" "200 Hz framed stream from the Pico" 5 ;;
         M6) not_built "M6 L5" "10-minute soak, unplug/replug, reflash x3" 6 ;;
     esac

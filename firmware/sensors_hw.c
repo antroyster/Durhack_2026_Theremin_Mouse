@@ -1,8 +1,7 @@
 /*
  * sensors_hw.c - real sensors (-DSENSORS=HW).
  *
- * Milestone 3: the buttons, joystick and optical sensor are real. The IMU (4)
- * reports SENSOR_OFF and returns zeros.
+ * Milestone 4: buttons, joystick, optical sensor and IMU are all real.
  */
 #include "sensors.h"
 
@@ -15,11 +14,12 @@
 
 #include <stdio.h>
 
+#include "imu_mpu6050.h"
 #include "opt_pmw3360.h"
 
 static sensor_status_t s_status[SENSOR_COUNT];
 static uint16_t s_joy_centre = CFG_JOY_CENTRE_DEFAULT; /* v0 */
-static char s_boot_info[64] = "none";
+static char s_boot_info[100] = "none";
 
 /* Mean of n ADC readings, 0.5 ms apart. Blocking, so boot time only. */
 static uint16_t adc_mean(unsigned n) {
@@ -87,9 +87,13 @@ void sensors_init(void) {
      * not, it contributes zeros and everything else keeps working). */
     pmw3360_info_t opt;
     s_status[SENSOR_OPT] = pmw3360_init(&opt) ? SENSOR_OK : SENSOR_MISSING;
-    snprintf(s_boot_info, sizeof s_boot_info, "opt_id=0x%02x opt_inv=0x%02x opt_srom=0x%02x opt_cpi=%u",
-             opt.product_id, opt.inverse_id, opt.srom_id, opt.cpi_ok ? (unsigned)CFG_OPT_CPI : 0u);
-    s_status[SENSOR_IMU] = SENSOR_OFF; /* milestone 4 */
+
+    /* IMU: WHO_AM_I decides. */
+    uint8_t who;
+    s_status[SENSOR_IMU] = mpu6050_init(&who) ? SENSOR_OK : SENSOR_MISSING;
+
+    snprintf(s_boot_info, sizeof s_boot_info, "opt_id=0x%02x opt_inv=0x%02x opt_srom=0x%02x opt_cpi=%u imu_id=0x%02x",
+             opt.product_id, opt.inverse_id, opt.srom_id, opt.cpi_ok ? (unsigned)CFG_OPT_CPI : 0u, who);
 }
 
 sensor_status_t sensors_status(sensor_id_t id) {
@@ -135,9 +139,11 @@ void sensors_optical_delta(int16_t *dx, int16_t *dy) {
 }
 
 void sensors_imu_raw(int16_t a[3], int16_t g[3]) {
-    for (int i = 0; i < 3; i++) {
-        a[i] = 0;
-        g[i] = 0;
+    if (s_status[SENSOR_IMU] != SENSOR_OK || !mpu6050_read(a, g)) {
+        for (int i = 0; i < 3; i++) {
+            a[i] = 0;
+            g[i] = 0;
+        }
     }
 }
 

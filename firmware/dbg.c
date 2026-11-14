@@ -11,7 +11,7 @@ void dbg_printf(const char *fmt, ...) {
      * the port. With no listener the text is dropped here, before any work. */
     if (!tud_cdc_connected()) return;
 
-    char buf[128];
+    char buf[160];
     va_list ap;
     va_start(ap, fmt);
     int n = vsnprintf(buf, sizeof(buf), fmt, ap);
