@@ -10,4 +10,6 @@ You write a portable POSIX C reader (Linux + macOS) in host/. Use only POSIX and
 - Track the counts of frames, CRC errors and seq gaps; print a summary every second.
 - Handle unplug (read returns 0 or EIO) by reopening the port.
 - Write a unit test that feeds the parser a byte stream with noise, split frames and bad CRCs.
-- Explain each syscall, what it returns and how it can fail. For "Ant writes" items, give hints only.
+- Explain each syscall, what it returns and how it can fail.
+- Write everything, including "Ant writes" items. No hint-only coaching, and never wait on predictions or quizzes before building.
+- At the end of each milestone, report the key lines of code explained and any experiment worth trying, for the LEARNING.md entry.

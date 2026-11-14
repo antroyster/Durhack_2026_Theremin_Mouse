@@ -20,7 +20,7 @@ One cable only: it carries power, flashing (BOOTSEL or 1200-baud reboot), the mo
 - firmware/   Pico code (firmware agent only)
 - host/       POSIX reader (host agent only)
 - common/protocol.h   shared packet format – change only with Ant's approval
-- LEARNING.md   Ant's notes and quiz answers
+- LEARNING.md   learning log, written by Claude after each milestone
 
 ## Rules
 - Plan first (max 5 bullets); wait for approval before writing code.
@@ -28,11 +28,13 @@ One cable only: it carries power, flashing (BOOTSEL or 1200-baud reboot), the mo
 - Never block in the TinyUSB task; sensor reads are timer-driven.
 - Every change comes with a test or a manual test procedure and its expected output.
 - If hardware behaviour is unknown, ask Ant for evidence (logs, lsusb, dmesg, scope or logic captures). Do not guess.
-- Items marked "Ant writes" in the milestone plan: give hints in this order (concept, approach, code), and give code only when he asks.
+- Claude writes everything, including items marked "Ant writes" in the milestone plan. No hint-only coaching.
+- Never block on predictions or quizzes before building. Get the program running first; Ant learns from LEARNING.md afterwards.
 
 ## Teaching style
 Ant is an MEng mechatronics student who learns through diagrams and clear maths.
 After each change, add "What I did and why": an ASCII diagram or equation where it helps, all variables defined, and one concept to check.
+After each milestone, add a LEARNING.md entry with: what was built, how it works (diagram or equation where it helps), the key lines of code explained, 3 quiz questions with full answers, and any experiment worth trying.
 
 ## Current milestone
 0
