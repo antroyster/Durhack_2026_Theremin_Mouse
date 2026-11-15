@@ -1,0 +1,6 @@
+# Lets the logged-in user read the Theremin Mouse's input device, so the bench
+# (evtest, bench/monitor) works without sudo. Install once:
+#   sudo cp bench/70-theremin-mouse.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload
+# then unplug and replug the Pico.
+SUBSYSTEM=="input", ATTRS{idVendor}=="cafe", ATTRS{idProduct}=="4005", TAG+="uaccess"
