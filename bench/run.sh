@@ -556,7 +556,7 @@ m7_l2() {
 }
 # The PC program's maths, on made-up IMU data with known answers.
 m7_motion() {
-    local out; out="$(make -s -C software_sandbox/DurHack test 2>&1)"
+    local out; out="$(make -s -C theremin test 2>&1)"
     echo "$out" | grep -E '^(PASS|FAIL)' | while read -r st rest; do echo "$st  M7 L0  $rest"; done
     check_eq "M7 L0" "motion maths: failed checks" "$(echo "$out" | grep -c '^FAIL')" 0
     check_range "M7 L0" "motion maths: passed checks" "$(echo "$out" | grep -c '^PASS')" 140 400

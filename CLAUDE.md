@@ -23,7 +23,7 @@ Spec: docs/phase1-spec.md is the source of truth for milestones, HID report, mat
 - host/       POSIX reader (host agent only)
 - common/protocol.h   shared packet format – change only with Ant's approval
 - common/     pure logic modules (no Pico SDK calls), built for both the Pico and the PC
-- software_sandbox/DurHack/   PC program (C++, Eigen, freeglut, SDL2): 3D IMU view, table-mode cursor, height notes, gestures (`make -C software_sandbox/DurHack test|run`)
+- theremin/   PC program (C++, Eigen, freeglut, SDL2): 3D IMU view, table-mode cursor, height notes, gestures (`make -C theremin test|run`)
 - tests/      L0 unit tests on the PC (`make -C tests`)
 - bench/      test bench: `./bench/run.sh L0..L5 | M0..M7 | HW`, `./bench/flash.sh SIM|HW`, pico_sim, monitor
 - docs/TESTBENCH.md   checklist and one card per test

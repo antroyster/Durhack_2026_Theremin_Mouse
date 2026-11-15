@@ -282,7 +282,7 @@ Run everything from the repo root (`src/`). Each test prints PASS, FAIL or SKIP 
 
 - Run: `./bench/run.sh M7`. No hands needed; board lying still.
 - M7 L0 `test_m7`: the `@M dx dy` parser (good, clamped, malformed, restarted commands).
-- M7 L0 motion maths (`software_sandbox/DurHack/test_motion.cpp`): a fake IMU with the real board's noise and gyro bias. Tilt, bias, 90° turn, table strokes of 4.5 cm, a 25 cm lift, note number, two gestures recognised at another strength and after turning 120°, an unrecorded movement rejected, save/load.
+- M7 L0 motion maths (`theremin/test_motion.cpp`): a fake IMU with the real board's noise and gyro bias. Tilt, bias, 90° turn, table strokes of 4.5 cm, a 25 cm lift, note number, two gestures recognised at another strength and after turning 120°, an unrecorded movement rejected, save/load.
 - HW: the card above.
 - M7 L2: with the pointer grabbed by evtest, nine `@M` commands are sent; the mouse must report exactly x = 501, y = −399 with no single event above 127.
 - If M7 L2 fails with totals of 0: the board is on old firmware (`./bench/flash.sh HW`), or another program has the serial port open.

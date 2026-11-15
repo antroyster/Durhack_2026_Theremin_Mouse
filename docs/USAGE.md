@@ -233,9 +233,9 @@ SIM firmware replaces every sensor with scripted data, so USB, the mouse reports
 One-time: `sudo apt install freeglut3-dev libsdl2-dev` (already on this laptop). Then:
 
 ```
-make -C software_sandbox/DurHack        # build
-make -C software_sandbox/DurHack test   # check the maths, no hardware needed
-cd software_sandbox/DurHack && build/theremin
+make -C theremin        # build
+make -C theremin test   # check the maths, no hardware needed
+cd theremin && build/theremin
 ```
 
 Close the reader and the monitor first: only one program can read the port.

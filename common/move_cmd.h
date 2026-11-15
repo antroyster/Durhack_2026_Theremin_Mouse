@@ -3,7 +3,7 @@
  *
  *   "@M <dx> <dy>\n"     e.g. "@M 12 -3\n"  = move the cursor 12 right, 3 up
  *
- * The PC program (software_sandbox/DurHack) works out cursor movement from
+ * The PC program (theremin) works out cursor movement from
  * the IMU stream and sends it back; the Pico adds it to its HID mouse report,
  * so the PC still sees one ordinary USB mouse. dx, dy are decimal, each
  * limited to -MOVE_CMD_MAX..+MOVE_CMD_MAX (larger values are clamped).

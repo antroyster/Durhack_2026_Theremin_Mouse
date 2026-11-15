@@ -565,7 +565,7 @@ The Pico drops off USB and re-enumerates about a second later, exactly like an u
 
 - A switch for the optical sensor (`CFG_OPT_ENABLE` in `firmware/config.h`, now 0). The status line says `opt=off`.
 - A way for the PC to move the cursor: it sends `@M dx dy` on the serial port and the Pico adds the counts to its USB mouse report.
-- `software_sandbox/DurHack`: a C++ program (Eigen for the maths, as in your `Main.cpp`) that reads the IMU stream, shows the device in 3D, decides "on the table" or "in the air", makes cursor counts on the table, a note from height in the air, and records and recognises gestures.
+- `theremin`: a C++ program (Eigen for the maths, as in your `Main.cpp`) that reads the IMU stream, shows the device in 3D, decides "on the table" or "in the air", makes cursor counts on the table, a note from height in the air, and records and recognises gestures.
 - Bench: `./bench/run.sh HW` (hands-free sensor check) and `./bench/run.sh M7`.
 
 ### How it works
