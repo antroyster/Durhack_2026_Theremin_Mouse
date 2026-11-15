@@ -1,0 +1,12 @@
+# Build output and editor caches: rebuilt on every machine, never pushed.
+build/
+.vs/
+x64/
+Debug/
+Release/
+*.ipch
+*.pdb
+*.obj
+*.zip
+# A downloaded copy of the Eigen library (src/theremin/Eigen is the one the program uses).
+non_claude_troubleshooting/eigen-5.0.1/
