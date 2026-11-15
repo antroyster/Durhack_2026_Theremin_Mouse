@@ -297,6 +297,45 @@ static void run_all() {
         check_eq("6.5 deg (inside the hysteresis): note held at 7", t.note, 7);
         tip(2.5f);
         check_eq("9 deg (past the hysteresis): note 8", t.note, 8);
+        check_range("rolling only: volume unchanged", t.volume, 0.49, 0.51);
+    }
+    {   // 16. Volume: the red nose turns it up (+) or down (-) at vol_rate = 0.25 per s per 10 deg
+        //     beyond vol_dead_deg = 5 (vol_invert = 0). note_source 2 swaps the two axes' roles.
+        Tracker t; t.p.filter = (float)FILT; t.p.vol_invert = 0; FakeImu imu;
+        imu.rest(t, 2); t.calibrate_table(); imu.rest(t, 0.2f);
+        auto turn = [&](Vector3f axis, float deg, float hold) {     // +deg about -y raises the nose (+x end)
+            for (int i = 0; i < 200; i++) imu.step(t, Vector3f::Zero(), axis * (deg / DEG));
+            imu.rest(t, hold);
+        };
+        Vector3f nose = -Vector3f::UnitY(), roll = Vector3f::UnitX();
+        turn(nose, 4, 2);
+        check_range("nose up 4 deg: tilt [deg]", t.tilt_x_deg, 3, 5);
+        check_range("inside the dead zone: volume stays 0.5", t.volume, 0.49, 0.51);
+        turn(nose, 21, 0.5f);
+        check_range("nose up 25 deg: green tilt stays 0 [deg]", t.tilt_y_deg, -1, 1);
+        check_eq("nose up: note unchanged (7)", t.note, 7);
+        t.volume = 0.2f; imu.rest(t, 0.4f);                          // 0.25 x 20/10 x 0.4 s = +0.20
+        check_range("25 deg for 0.4 s: volume 0.2 -> 0.4", t.volume, 0.36, 0.44);
+        t.p.vol_invert = 1; t.volume = 0.6f; imu.rest(t, 0.4f);      // the same tilt, the other way
+        check_range("vol_invert = 1, 25 deg for 0.4 s: volume 0.6 -> 0.4", t.volume, 0.36, 0.44);
+        t.p.vol_invert = 0;
+        imu.rest(t, 2);
+        check_range("held up: volume stops at 1", t.volume, 0.99, 1);
+        turn(nose, -50, 3);
+        check_range("held down: volume stops at 0", t.volume, 0, 0.01);
+        turn(nose, 25, 0.5f);
+        t.volume = 0.5f; t.p.note_source = 2;                        // nose = note, roll = volume
+        turn(nose, 80, 0.5f);
+        check_eq("note_source 2, nose up 80 deg: highest note (14)", t.note, 14);
+        check_range("note_source 2, nose up: volume unchanged", t.volume, 0.49, 0.51);
+        turn(nose, -80, 0.5f);
+        turn(roll, 25, 0.5f);
+        check_eq("note_source 2, rolled: note stays 7", t.note, 7);
+        check_range("note_source 2, rolled 25 deg: volume up", t.volume, 0.6, 1);
+        float v = t.volume; t.p.note_source = 0; imu.rest(t, 1);
+        check_range("height notes: volume fixed", t.volume - v, -0.001, 0.001);
+        t.p.note_source = 2; t.p.vol_on = 0; imu.rest(t, 1);
+        check_range("vol_on = 0: volume fixed", t.volume - v, -0.001, 0.001);
     }
 }
 

@@ -1,5 +1,5 @@
 // motion.hpp - raw IMU samples -> orientation, table/air mode, cursor counts, height,
-// theremin note and gestures. Pure maths (Eigen only), so test_motion.cpp can check it.
+// theremin note, volume and gestures. Pure maths (Eigen only), so test_motion.cpp can check it.
 //
 // Frames: sensor S = the chip's own x, y, z.  World W = z up, x/y level, yaw arbitrary.
 //         q rotates S into W:  v_W = q * v_S.     Units: m/s^2, rad/s, m, s.
@@ -54,6 +54,7 @@ struct Params {
     float calm_acc_g = 0.06f, calm_gyro_dps = 40.0f;   // hand-held tremor only: damp velocity hard
     float vel_leak_s = 3.0f;        // velocity decays with this time constant
     // Theremin note. note_source 1 = tilt of the y (green) axis: -90..+90 deg over note_count steps.
+    //                note_source 2 = tilt of the x (red) axis, the nose, the same way.
     //                note_source 0 = height: one step per note_step_m since the last change.
     float note_source = 1, note_tilt_hyst_deg = 1.5f;
     float note_by_height = 1, note_step_m = 0.04f, note_count = 15;
@@ -61,6 +62,10 @@ struct Params {
     float note_safe_logs = 20;      // on a jerk, position returns to the mean of this many samples
     float note_base_midi = 57;      // lowest note (57 = A3, 220 Hz)
     float note_glide = 0;           // 1 = continuous pitch
+    // Volume, tilt notes only: the other axis turns it up (+) or down (-) like a knob,
+    // vol_rate per second per 10 deg beyond vol_dead_deg. Level again and it stays.
+    float vol_on = 1, vol_dead_deg = 5.0f, vol_rate = 0.25f;
+    float vol_invert = 1;           // 1 = the other way round: + turns it down, - turns it up
     float gesture_max_dist = 0.75f; // 0 = identical, about 1.4 = unrelated
 };
 
@@ -74,7 +79,7 @@ inline const std::vector<ParamInfo> &param_table() {
         {"tilt_gain", &P::tilt_gain, 0.25f},             {"acc_reject_g", &P::acc_reject_g, 0.01f},
         {"auto_bias", &P::auto_bias, 1},                 {"cursor_method", &P::cursor_method, 1, 0, 2},
         {"rest_snap_s", &P::rest_snap_s, 0.5f},          {"rest_snap_deg", &P::rest_snap_deg, 0.5f},
-        {"note_source", &P::note_source, 1, 0, 1},       {"note_tilt_hyst_deg", &P::note_tilt_hyst_deg, 0.5f},
+        {"note_source", &P::note_source, 1, 0, 2},       {"note_tilt_hyst_deg", &P::note_tilt_hyst_deg, 0.5f},
         {"cursor_gyro_gain", &P::cursor_gyro_gain, 50},  {"gyro_dead_dps", &P::gyro_dead_dps, 0.25f},
         {"cursor_tilt_gain", &P::cursor_tilt_gain, 5},   {"tilt_dead_deg", &P::tilt_dead_deg, 0.5f},
         {"cursor_smooth", &P::cursor_smooth, 0.05f, 0.05f, 1},
@@ -90,6 +95,8 @@ inline const std::vector<ParamInfo> &param_table() {
         {"note_safe_logs", &P::note_safe_logs, 5},
         {"note_count", &P::note_count, 1},               {"note_base_midi", &P::note_base_midi, 1},
         {"note_glide", &P::note_glide, 1},               {"gesture_max_dist", &P::gesture_max_dist, 0.05f},
+        {"vol_on", &P::vol_on, 1, 0, 1},                 {"vol_dead_deg", &P::vol_dead_deg, 0.5f},
+        {"vol_rate", &P::vol_rate, 0.05f},               {"vol_invert", &P::vol_invert, 1, 0, 1},
     };
     return t;
 }
@@ -149,6 +156,7 @@ public:
     Vector3f table_up = Vector3f::UnitZ();     // "up" in the sensor frame when on the table
     float tilt_deg = 0;                        // angle from the table plane
     float tilt_y_deg = 0;                      // signed angle of the y (green) axis above the table, -90..+90
+    float tilt_x_deg = 0;                      // the same for the x (red) axis, the nose
     uint32_t snap_count = 0;                   // rest snaps that changed q
     float g_ref = 1.0f;                        // |a| at rest [g] (this chip's own 1 g)
     int cursor_dx = 0, cursor_dy = 0;          // whole counts to send for this sample
@@ -156,6 +164,7 @@ public:
     float note_hz = 0;                         // 0 until the first real sample
     bool note_locked = false;                  // a jerk was seen: the note is held
     float note_progress = 0;                   // -1..+1 towards the next step down / up
+    float volume = 0.5f;                       // 0..1, turned by the tilt across the note axis
     uint32_t lock_count = 0;                   // jerks that locked the note
     int last_gesture = -1;                     // slot recognised most recently
     float last_gesture_dist = 0;
@@ -188,6 +197,7 @@ public:
         update_mode(dt);
         update_cursor(w, up_s, dt);
         update_note(dt);
+        update_volume(dt);
         update_gestures(w, was_still);
     }
 
@@ -237,6 +247,9 @@ public:
     }
     void reset_orientation() { init_ = false; mahony_int.setZero(); }
     float heading() const { Vector3f x = q * Vector3f::UnitX(); return std::atan2(x.y(), x.x()); }   // yaw [rad]
+    // Tilt notes: one axis plays the note, the one across it sets the volume.
+    float note_tilt_deg() const { return p.note_source == 2 ? tilt_x_deg : tilt_y_deg; }
+    float vol_tilt_deg() const { return p.note_source == 2 ? tilt_y_deg : tilt_x_deg; }
 
 private:
     struct Win { Vector3f a, w; };
@@ -336,13 +349,15 @@ private:
         mahony_int.setZero();
     }
 
-    // 3. Tilt from the table plane, and the signed tilt of the y axis:
-    //    n = y flattened onto the table plane,  theta = asin(n . up).  Returns up in the sensor frame.
+    // 3. Tilt from the table plane, and the signed tilt of the y and x axes:
+    //    n = axis flattened onto the table plane,  theta = asin(n . up).  Returns up in the sensor frame.
     Vector3f update_tilt() {
         Vector3f up_s = q.conjugate() * Vector3f::UnitZ();
         tilt_deg = acos_deg(up_s.dot(table_up));
         Vector3f n_y = Vector3f::UnitY() - Vector3f::UnitY().dot(table_up) * table_up;
+        Vector3f n_x = Vector3f::UnitX() - Vector3f::UnitX().dot(table_up) * table_up;
         if (n_y.norm() > 1e-3f) tilt_y_deg = asin_deg(n_y.normalized().dot(up_s));
+        if (n_x.norm() > 1e-3f) tilt_x_deg = asin_deg(n_x.normalized().dot(up_s));
         return up_s;
     }
 
@@ -427,7 +442,7 @@ private:
         int n_notes = std::max(1, (int)p.note_count);
         float span = 180.0f / n_notes;                                  // degrees per note (tilt)
         if (p.note_source != 0) {
-            float x = (tilt_y_deg + 90.0f) / span, h = p.note_tilt_hyst_deg / span;
+            float x = (note_tilt_deg() + 90.0f) / span, h = p.note_tilt_hyst_deg / span;
             if (x < note - h || x > note + 1 + h) note = std::max(0, std::min(n_notes - 1, (int)std::floor(x)));
             note_locked = false; anchor_h_ = 0; safe_.clear();
         } else if (mode == Mode::TABLE) {
@@ -437,7 +452,7 @@ private:
         }
         if (note > n_notes - 1) note = n_notes - 1;
         if (p.note_source != 0) {
-            note_progress = 2.0f * ((tilt_y_deg + 90.0f) / span - note - 0.5f);
+            note_progress = 2.0f * ((note_tilt_deg() + 90.0f) / span - note - 0.5f);
             note_progress = std::max(-1.0f, std::min(1.0f, note_progress));
         } else {
             note_progress = (pos.z() - anchor_h_) / std::max(0.005f, p.note_step_m);
@@ -475,7 +490,16 @@ private:
         if (note == 0 && pos.z() < anchor_h_) anchor_h_ = pos.z();
     }
 
-    // 9. Gestures: one movement = from "starts moving" to "still again", recorded with the
+    // 9. Volume, like a knob: theta = vol_tilt_deg(), e = |theta| - dead zone. Outside it
+    //    dv/dt = s * vol_rate * sign(theta) * e / 10 deg, v kept in 0..1, s = -1 if vol_invert
+    //    else +1. Height notes: v is fixed.
+    void update_volume(float dt) {
+        if (p.vol_on == 0 || p.note_source == 0) return;
+        float th = vol_tilt_deg(), e = std::fabs(th) - p.vol_dead_deg, s = p.vol_invert != 0 ? -1.0f : 1.0f;
+        if (e > 0) volume = clampf(volume + s * p.vol_rate * std::copysign(e, th) / 10.0f * dt, 0, 1);
+    }
+
+    // 10. Gestures: one movement = from "starts moving" to "still again", recorded with the
     //    heading at the start removed (so it does not matter which way you face).
     void update_gestures(const Vector3f &w, bool was_still) {
         if (was_still && !still) { rec_.clear(); yaw0_ = heading(); recording_ = true; }

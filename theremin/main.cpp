@@ -54,6 +54,7 @@ static bool g_btn_seen = false;               // any button event yet?
 
 static const char *FILTER_NAMES[3] = {"complementary", "Mahony", "Madgwick"};
 static const char *CURSOR_NAMES[3] = {"strokes (acceleration, table only)", "air mouse (rotation rate)", "tilt = speed"};
+static const char *SOURCE_NAMES[3] = {"height", "tilt of the green axis (red nose = volume)", "tilt of the red nose (green axis = volume)"};
 
 // ---- Small helpers -------------------------------------------------------------------------
 static std::string fmt(const char *f, ...) {
@@ -79,10 +80,12 @@ static void audio_cb(void *, Uint8 *stream, int len) {       // SDL's audio thre
 static float fx_bend(const fx::Preset &p) {
     return g_theremin_mode ? fx::Board::bend_from_joy(g_joy_raw, g_joy_v0, p.joy_depth) : 0.0f;
 }
-// Hand the active preset and the bend to the audio thread. Off = amount 0 = the clean tone.
+// Hand the active preset, the bend and the volume to the audio thread. Off = amount 0 = the clean
+// tone. Volume 0.5 = level 0.25, the loudness before volume control existed.
 static void update_fx() {
     if (!g_audio_ok) return;
     SDL_LockAudio();
+    g_engine.level = 0.5f * g_t.volume;
     if (g_board.active) g_engine.target = g_board.presets[g_board.active - 1];
     g_engine.target_amount = g_board.active ? 1.0f : 0.0f;
     g_engine.target_bend = g_board.active ? fx_bend(g_board.presets[g_board.active - 1]) : 0.0f;
@@ -245,8 +248,11 @@ static void draw_status(float H, bool table) {
     std::string note = fmt("note %d of %d: %s  %.1f Hz   ", g_t.note + 1, (int)g_t.p.note_count, note_name(g_t.note_hz).c_str(), g_t.note_hz);
     if (g_t.p.note_source != 0) {
         float span = 180.0f / std::max(1, (int)g_t.p.note_count);
-        note += fmt("by TILT: green axis %+5.1f deg (this note %+.0f..%+.0f)   rest snaps %u   sound %s", g_t.tilt_y_deg,
-                    -90 + g_t.note * span, -90 + (g_t.note + 1) * span, g_t.snap_count, g_sound_on ? "ON" : "off (S)");
+        bool nose = g_t.p.note_source == 2;
+        note += fmt("by %s %+5.1f deg (note %+.0f..%+.0f)   vol %3.0f%% (%s %+5.1f%s)   snaps %u   sound %s",
+                    nose ? "red nose" : "green tilt", g_t.note_tilt_deg(), -90 + g_t.note * span, -90 + (g_t.note + 1) * span,
+                    g_t.volume * 100, nose ? "green tilt" : "red nose", g_t.vol_tilt_deg(), g_t.p.vol_on == 0 ? " (off)" : (g_t.p.vol_invert != 0 ? " inv" : ""),
+                    g_t.snap_count, g_sound_on ? "ON" : "off (S)");
     } else {
         note += fmt("to next gate %+4.0f%%   %s   jerks %u   sound %s", g_t.note_progress * 100,
                     g_t.note_locked ? "LOCKED (jerk)" : "free", g_t.lock_count, g_sound_on ? "ON" : "off (S)");
@@ -271,7 +277,7 @@ static void draw_tuning() {
         std::string nm = pt[i].name;
         const char *note = nm == "filter" ? FILTER_NAMES[clamp_index(g_t.p.filter, 2)]
                          : nm == "cursor_method" ? CURSOR_NAMES[clamp_index(g_t.p.cursor_method, 2)]
-                         : nm == "note_source" ? (g_t.p.note_source != 0 ? "tilt of the green axis" : "height") : "";
+                         : nm == "note_source" ? SOURCE_NAMES[clamp_index(g_t.p.note_source, 2)] : "";
         std::string s = fmt("%s %-18s %g  %s", i == g_sel ? ">" : " ", pt[i].name, g_t.p.*(pt[i].field), note);
         if (i == g_sel) line(s, 1, 1, 0.3f); else line(s, 0.6f, 0.6f, 0.6f);
     }
