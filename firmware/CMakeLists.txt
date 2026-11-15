@@ -52,6 +52,7 @@ set(APP_SOURCES
     main.c                          # timer tick, main loop, USB callbacks
     dbg.c                           # non-blocking debug text on CDC
     usb_descriptors.c               # device, configuration, HID report and string descriptors
+    ${COMMON_DIR}/move_cmd.c        # "@M dx dy": cursor movement sent by the PC program
     ${COMMON_DIR}/cmd_match.c       # recognises the "@RUN" / "@STOP" bench commands on CDC
     ${COMMON_DIR}/debounce.c        # 5 ms time-based debounce
     ${COMMON_DIR}/mouse_report.c    # builds the 4-byte HID report, "send only on change"

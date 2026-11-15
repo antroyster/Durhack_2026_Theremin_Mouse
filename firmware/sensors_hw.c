@@ -85,8 +85,12 @@ void sensors_init(void) {
     joystick_init();
     /* Optical sensor: the ID registers decide whether it is there (spec B4: if
      * not, it contributes zeros and everything else keeps working). */
-    pmw3360_info_t opt;
+    pmw3360_info_t opt = {0};
+#if CFG_OPT_ENABLE
     s_status[SENSOR_OPT] = pmw3360_init(&opt) ? SENSOR_OK : SENSOR_MISSING;
+#else
+    s_status[SENSOR_OPT] = SENSOR_OFF; /* switched off in config.h: SPI pins left untouched */
+#endif
 
     /* IMU: WHO_AM_I decides. */
     uint8_t who;
@@ -138,13 +142,42 @@ void sensors_optical_delta(int16_t *dx, int16_t *dy) {
     *dy = CFG_OPT_INVERT_Y ? (int16_t)-sy : sy;
 }
 
+/* IMU health, counted since boot. A sample is bad if the I2C read failed, or
+ * if all six values are exactly 0 (a real chip always shows noise and gravity;
+ * all zeros means it reset itself and is asleep). */
+static volatile uint32_t s_imu_fail, s_imu_zero, s_imu_recover;
+static uint16_t s_imu_bad_run; /* bad samples in a row */
+
 void sensors_imu_raw(int16_t a[3], int16_t g[3]) {
-    if (s_status[SENSOR_IMU] != SENSOR_OK || !mpu6050_read(a, g)) {
-        for (int i = 0; i < 3; i++) {
-            a[i] = 0;
-            g[i] = 0;
-        }
+    for (int i = 0; i < 3; i++) { a[i] = 0; g[i] = 0; }
+    if (s_status[SENSOR_IMU] == SENSOR_OFF) return;
+    /* While it is not answering, only try every 20th sample (10 per second), so
+     * a dead or stuck bus cannot eat the tick's time. Zeros are sent meanwhile. */
+    static uint8_t skip;
+    if (s_status[SENSOR_IMU] == SENSOR_MISSING && ++skip < 20u) return;
+    skip = 0;
+
+    bool ok = mpu6050_read(a, g);
+    bool zero = ok && !(a[0] | a[1] | a[2] | g[0] | g[1] | g[2]);
+    if (ok && !zero) {
+        s_imu_bad_run = 0;
+        s_status[SENSOR_IMU] = SENSOR_OK;
+        return;
     }
+    if (!ok) s_imu_fail++; else s_imu_zero++;
+    /* 0.5 s of bad samples in a row (or 5 tries once it is already marked missing): report it, try to wake the chip. */
+    if (++s_imu_bad_run >= (s_status[SENSOR_IMU] == SENSOR_MISSING ? 5u : CFG_IMU_RATE_HZ / 2u)) {
+        s_imu_bad_run = 0;
+        s_status[SENSOR_IMU] = SENSOR_MISSING;
+        s_imu_recover++;
+        mpu6050_configure();                         /* 5 short writes; gives up after 2 ms if nothing answers */
+    }
+}
+
+void sensors_imu_health(uint32_t *read_failures, uint32_t *zero_samples, uint32_t *recoveries) {
+    *read_failures = s_imu_fail;
+    *zero_samples = s_imu_zero;
+    *recoveries = s_imu_recover;
 }
 
 void sensors_sim_restart(void) {}

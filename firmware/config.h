@@ -58,6 +58,12 @@
 #define CFG_SCROLL_INVERT      0    /* 0: higher ADC reading = scroll up; 1: flipped */
 
 /* ---- Optical sensor PAW3360 on spi0, mode 3 (milestone 3; spec T11) ---- */
+/* THE SWITCH for the optical sensor (HW firmware only):
+ *   0 = module not used: its pins are never touched, status line says opt=off,
+ *       no LED error code, cursor x/y stay 0. Buttons, scroll and IMU still work.
+ *   1 = module used: probed at power-up, opt=ok or opt=missing (3 blinks).
+ * Change the number, then run ./bench/flash.sh HW. */
+#define CFG_OPT_ENABLE     0
 #define CFG_OPT_SPI_PORT   spi0
 #define CFG_PIN_OPT_MISO   16
 #define CFG_PIN_OPT_CS     17

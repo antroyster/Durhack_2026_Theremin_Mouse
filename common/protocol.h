@@ -83,8 +83,13 @@ typedef struct __attribute__((packed)) {
     uint16_t crc;     /* proto_crc16 over bytes 2..20 */
 } proto_imu_frame_t;
 
+#ifdef __cplusplus
+static_assert(sizeof(proto_imu_frame_t) == PROTO_IMU_FRAME_SIZE,
+              "proto_imu_frame_t must be 23 bytes");
+#else
 _Static_assert(sizeof(proto_imu_frame_t) == PROTO_IMU_FRAME_SIZE,
                "proto_imu_frame_t must be 23 bytes");
+#endif
 
 /*
  * CRC-16/CCITT-FALSE: polynomial 0x1021, initial value 0xFFFF, no bit

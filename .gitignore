@@ -2,3 +2,5 @@ mucking_about/
 build/
 build-*/
 bench/.last_flashed
+.vs/
+software_sandbox/DurHack/build/

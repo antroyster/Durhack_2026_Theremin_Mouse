@@ -75,7 +75,10 @@ void sensors_optical_delta(int16_t *dx, int16_t *dy);
 /* One line of boot facts for the bench, e.g. "opt_id=0x42 opt_srom=0x04 opt_cpi=1600". */
 const char *sensors_boot_info(void);
 
-/* Raw IMU counts: a = ax, ay, az; g = gx, gy, gz. */
+/* IMU trouble counted since boot: failed I2C reads, all-zero samples (chip asleep), wake-up attempts. */
+void sensors_imu_health(uint32_t *read_failures, uint32_t *zero_samples, uint32_t *recoveries);
+
+/* Raw IMU counts: a = ax, ay, az; g = gx, gy, gz. Zeros while the IMU is not answering. */
 void sensors_imu_raw(int16_t a[3], int16_t g[3]);
 
 /*

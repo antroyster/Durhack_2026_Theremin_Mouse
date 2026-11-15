@@ -558,3 +558,65 @@ The Pico drops off USB and re-enumerates about a second later, exactly like an u
 
 1. Prove the watchdog: add `if (to_ms_since_boot(get_absolute_time()) > 10000) while (true) {}` to the main loop, flash, and run the reader. About every 11 s the stream should stop, the board should reset, and the reader should reconnect. Remove the line afterwards.
 2. Run `./bench/run.sh M6` on battery with the laptop lid closed part-way through, and see how the reader reports the suspend.
+
+## Milestone 7: IMU cursor, 3D view, height notes and gestures (2026-11-15)
+
+### What was built
+
+- A switch for the optical sensor (`CFG_OPT_ENABLE` in `firmware/config.h`, now 0). The status line says `opt=off`.
+- A way for the PC to move the cursor: it sends `@M dx dy` on the serial port and the Pico adds the counts to its USB mouse report.
+- `software_sandbox/DurHack`: a C++ program (Eigen for the maths, as in your `Main.cpp`) that reads the IMU stream, shows the device in 3D, decides "on the table" or "in the air", makes cursor counts on the table, a note from height in the air, and records and recognises gestures.
+- Bench: `./bench/run.sh HW` (hands-free sensor check) and `./bench/run.sh M7`.
+
+### How it works
+
+```
+ Pico                                   PC: theremin program
+ IMU 200 Hz --> packets --USB CDC-->  imu_reader --> Tracker.update(a, w, dt)
+                                                        |
+ USB mouse report  <-- "@M dx dy" <---- cursor counts --+--> 3D box, note, gesture
+ (+ joystick scroll, buttons: done on the Pico alone)
+```
+
+**Symbols.** `a` = accelerometer reading [g], `w` = gyro reading [rad/s], `b` = gyro bias, `dt` = 0.005 s, `q` = rotation from the sensor frame to the world frame (world z is up), `g_ref` = what this chip reads for 1 g (0.928 on your board), `v` = velocity, `h` = height.
+
+1. **Still or moving.** Over the last 40 samples (0.2 s): still if the spread (max − min) of every axis is small *and* the mean agrees with `b` and `g_ref`. While still, `b` and `g_ref` are re-measured.
+2. **Orientation.** Gyro turns `q`; the accelerometer corrects the tilt slowly:
+
+   ```
+   q <- q * exp((w - b) dt)                 gyro: fast, but drifts
+   e  = (q a / |a|) x z                     how far measured "up" is from world z
+   q <- rot(tilt_gain * dt * e) * q         accel: slow, but never drifts
+   ```
+   Yaw has no such correction (gravity says nothing about heading), so yaw drifts slowly.
+3. **Linear acceleration.** `lin = q a − g_ref z` (gravity removed). On the table the tilt is known exactly, so `lin = q (a − g_ref n_table)` is used instead, where `n_table` is "up" as stored when you pressed C.
+4. **Velocity and position.** `v += lin dt`, `p += v dt`, and `v = 0` whenever still. That last rule (a zero-velocity update) is what keeps double integration usable.
+5. **Table or air.** Table if `angle(up, n_table) < table_tilt_deg` and `|h| < table_h_m` for `table_dwell_s`. On the table and still: `h = 0`.
+6. **Cursor.** `dx = gain_x · v_x · dt`, `dy = −gain_y · v_y · dt`, with `v` expressed in the device's own axes. The fraction of a count is kept for the next sample.
+7. **Note.** `n = floor((h − note_h0) / note_step)`, `f = 440 · 2^((midi − 69)/12)`.
+8. **Gesture.** A movement runs from "starts moving" to "still again". It is resampled to 32 points of 6 numbers (3 linear accelerations, 3 rotation rates), then divided by its own RMS. Distance to a stored gesture: `d = sqrt(mean |g_i − t_i|²)`; 0 is identical, 1.41 is unrelated.
+
+### Key lines
+
+- `firmware/sensors_hw.c`: `#if CFG_OPT_ENABLE … #else s_status[SENSOR_OPT] = SENSOR_OFF;` The driver is not even called, so the unconnected SPI pins are never driven. `SENSOR_OFF` is not a fault, so the LED stays on its healthy 1 Hz toggle.
+- `firmware/main.c`, `cdc_rx_task()`: `g_dx_pending += mx;` inside `save_and_disable_interrupts()`. The same counters the optical sensor used, so the existing clamp-to-127-and-carry code sends large moves over several reports without losing a count. The bench proved it: nine commands in, x = 501 and y = −399 out, largest event 127.
+- `motion.hpp`, `window_is_still()`: the spread test works before the bias is known; the mean test stops a perfectly steady turn being mistaken for rest. (The first version lacked it, and the 90° test read 26°.)
+- `motion.hpp`, step 4: `q * (a - g_ref * table_up)`. A 1° tilt error would otherwise leak 0.017 g of gravity into the cursor, which is 17 cm/s of false speed after one second.
+- `main.cpp`: `M.block<3,3>(0,0) = g_t.q.toRotationMatrix(); glMultMatrixf(M.data());` The 3D box is drawn with exactly the tracker's rotation, so what you see is what the maths believes.
+
+### Quiz
+
+**Q1. Your board reads |a| = 0.928 g at rest. Why does the tracker measure `g_ref` instead of assuming 1 g?**
+With 1 g assumed, `lin_z = 0.928 − 1 = −0.072 g = −0.71 m/s²` at rest. Integrated twice for 1 s that is `h = ½ · 0.71 · 1² = 0.35 m` of false height. Using the measured value makes `lin_z` zero at rest.
+
+**Q2. You slide the device at a constant 10 cm/s for 2 s. What does the cursor do, and why?**
+It moves at the start (the push is an acceleration), then stops after about 0.2 s: at constant velocity the accelerometer reads only gravity, the stillness test fires and sets `v = 0`. An accelerometer cannot tell constant velocity from rest. Short strokes work; long glides do not.
+
+**Q3. Why is height trustworthy on the table but only approximate in the air?**
+On the table and still, the program sets `h = 0`: an absolute reference. In the air there is none; `h` is the double integral of `lin_z`, so an acceleration error `e` grows as `½ e t²`. The zero-velocity update stops the growth each time you hold still, but does not undo the error already made.
+
+### Experiments worth trying
+
+1. Run the program, lay the device flat, press C, then tilt it slowly. Read "tilt from table" and compare with a protractor or a phone's level app. They should agree to about 1°.
+2. Lift the device 20 cm against a ruler, hold still, and read the height. Repeat ten times and note the spread. That spread tells you the smallest `note_step_m` that will give steady notes.
+3. Record a session with `host/build/imu_reader <port> --csv run.csv` and replay it with `build/theremin --replay run.csv` at different settings in `theremin.cfg`: tuning without moving your hand again.

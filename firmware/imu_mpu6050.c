@@ -43,6 +43,17 @@ static uint8_t gyro_fs_bits(void) {
     switch (CFG_IMU_GYRO_RANGE_DPS) { case 500: return 1u << 3; case 1000: return 2u << 3; case 2000: return 3u << 3; default: return 0; }
 }
 
+/* Wake the chip and write its settings. Also used to recover a chip that has
+ * reset itself (a power dip puts it back to sleep, where it reads all zeros). */
+bool mpu6050_configure(void) {
+    bool ok = reg_write(REG_PWR_MGMT_1, 0x01);                 /* wake up; clock from the X gyro (more stable) */
+    ok = ok && reg_write(REG_CONFIG, 0x03);                    /* low-pass 44 Hz; gyro rate becomes 1 kHz */
+    ok = ok && reg_write(REG_SMPLRT_DIV, (uint8_t)(1000u / CFG_IMU_RATE_HZ - 1u)); /* 1 kHz / (1 + 4) = 200 Hz */
+    ok = ok && reg_write(REG_GYRO_CONFIG, gyro_fs_bits());
+    ok = ok && reg_write(REG_ACCEL_CONFIG, accel_fs_bits());
+    return ok;
+}
+
 bool mpu6050_init(uint8_t *who) {
     i2c_init(CFG_IMU_I2C_PORT, CFG_IMU_I2C_HZ);
     gpio_set_function(CFG_PIN_IMU_SDA, GPIO_FUNC_I2C);
@@ -52,13 +63,7 @@ bool mpu6050_init(uint8_t *who) {
 
     *who = 0;
     if (!reg_read(REG_WHO_AM_I, who, 1) || *who != WHO_AM_I_VALUE) return false;
-
-    bool ok = reg_write(REG_PWR_MGMT_1, 0x01);                 /* wake up; clock from the X gyro (more stable) */
-    ok = ok && reg_write(REG_CONFIG, 0x03);                    /* low-pass 44 Hz; gyro rate becomes 1 kHz */
-    ok = ok && reg_write(REG_SMPLRT_DIV, (uint8_t)(1000u / CFG_IMU_RATE_HZ - 1u)); /* 1 kHz / (1 + 4) = 200 Hz */
-    ok = ok && reg_write(REG_GYRO_CONFIG, gyro_fs_bits());
-    ok = ok && reg_write(REG_ACCEL_CONFIG, accel_fs_bits());
-    return ok;
+    return mpu6050_configure();
 }
 
 bool mpu6050_read(int16_t a[3], int16_t g[3]) {

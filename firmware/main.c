@@ -33,6 +33,7 @@
 #include "debounce.h"
 #include "imu_frame.h"
 #include "mouse_report.h"
+#include "move_cmd.h"
 #include "scroll.h"
 #include "sensors.h"
 
@@ -252,6 +253,7 @@ void tud_cdc_line_state_cb(uint8_t itf, bool dtr, bool rts) {
  * Both do nothing on a HW build. Every other byte is ignored. The matcher
  * keeps its state between calls, so a command may be split over USB packets. */
 static cmd_matcher_t s_cmd;
+static move_cmd_t    s_move; /* "@M dx dy": cursor movement worked out on the PC from the IMU */
 
 static void cdc_rx_task(void) {
     while (tud_cdc_available()) {
@@ -261,6 +263,15 @@ static void cdc_rx_task(void) {
             case CMD_RUN:  sensors_sim_restart(); break;
             case CMD_STOP: sensors_sim_stop();    break;
             default:       break;
+        }
+        int16_t mx, my;
+        if (move_cmd_feed(&s_move, (uint8_t)c, &mx, &my)) {
+            /* Same pending counters as the optical sensor: hid_task() clamps to
+             * +/-127 per report and carries the rest, so nothing is lost. */
+            uint32_t irq = save_and_disable_interrupts();
+            g_dx_pending += mx;
+            g_dy_pending += my;
+            restore_interrupts(irq);
         }
     }
 }
@@ -342,6 +353,9 @@ static void status_task(void) {
                    status_str(sensors_status(SENSOR_JOY)),
                    status_str(sensors_status(SENSOR_OPT)), status_str(sensors_status(SENSOR_IMU)));
         dbg_printf("info %s\n", sensors_boot_info()); /* sensor ID registers, for the bench */
+        uint32_t f, z, r;
+        sensors_imu_health(&f, &z, &r);                /* all 0 on a healthy board */
+        dbg_printf("imuhealth fail=%u zero=%u recover=%u\n", (unsigned)f, (unsigned)z, (unsigned)r);
     }
 
     if (fault != 0) {
@@ -375,10 +389,13 @@ int main(void) {
     carry_init(&s_carry_x);
     carry_init(&s_carry_y);
     s_opt_ok = (sensors_status(SENSOR_OPT) == SENSOR_OK);
-    s_imu_ok = (sensors_status(SENSOR_IMU) == SENSOR_OK);
+    /* Sampled even if it was missing at power-up: the driver keeps retrying, so a
+     * reseated wire brings the IMU back without a replug. Zeros are sent meanwhile. */
+    s_imu_ok = (sensors_status(SENSOR_IMU) != SENSOR_OFF);
     s_joy_ok = (sensors_status(SENSOR_JOY) == SENSOR_OK);
     s_joy_v0 = sensors_joystick_centre();
     cmd_matcher_init(&s_cmd);
+    move_cmd_init(&s_move);
 
     tud_init(0); /* start TinyUSB as a device on port 0 */
 

@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 # run.sh - the test bench. One command per level or per milestone:
 #   ./bench/run.sh L0 ... L5     every test at that level
-#   ./bench/run.sh M0 ... M6     every test for that milestone
+#   ./bench/run.sh M0 ... M7     every test for that milestone
+#   ./bench/run.sh HW            hands-free check of the real sensors (leave the board still, stick untouched)
 # Each test prints PASS / FAIL / SKIP with the measured number next to the limit.
 # Results are appended to bench/results.md. See docs/TESTBENCH.md for the cards.
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT" || exit 2
 TARGET="${1:-}"
-case "$TARGET" in L[0-5]|M[0-6]) ;; *) echo "usage: $0 L0..L5 | M0..M6"; exit 2 ;; esac
+case "$TARGET" in L[0-5]|M[0-7]|HW) ;; *) echo "usage: $0 L0..L5 | M0..M7 | HW"; exit 2 ;; esac
 
 RESULTS="$ROOT/bench/results.md"
 TMP="$(mktemp -d)"
@@ -343,6 +344,7 @@ m3_l2() {
 m3_l3() {
     if [ ! -t 0 ]; then skip "M3 L3" "real optical sensor: ID and 10 cm ruler" "needs you at the keyboard: run it in a terminal"; return; fi
     if ! ensure_fw HW; then fail "M3 L3" "board runs the HW firmware" "could not flash or find the Pico"; return; fi
+    if grep -q 'opt=off' "$TMP/fw"; then skip "M3 L3" "real optical sensor: ID and 10 cm ruler" "optical sensor switched off: CFG_OPT_ENABLE is 0 in firmware/config.h"; return; fi
     local info id srom cpi
     info="$(grep ' info ' "$TMP/fw" | tail -1)"
     id="$(echo "$info" | sed -n 's/.*opt_id=\(0x[0-9a-f]*\).*/\1/p')"
@@ -513,6 +515,53 @@ m6_l5() {
     check_eq "M6 L5" "reader reconnects counted" "$(field "$(grep '^TOTAL' "$TMP/replug-out")" reconnects)" 5
 }
 
+# Hands-free check of the real sensors as wired. The board must lie still with the joystick untouched.
+hw_auto() {
+    if ! ensure_fw HW; then fail "HW" "board runs the HW firmware" "could not flash or find the Pico"; return; fi
+    local port st; port="$(find_port)"
+    capture "$port" 10 "$TMP/hw-log" "$TMP/hw"
+    st="$(grep ' hello ' "$TMP/hw-log" | tail -1)"
+    echo "[bench] status: ${st#* }"
+    check_eq "HW" "joystick found at boot (1 = yes)" "$(echo "$st" | grep -c 'joy=ok')" 1
+    check_eq "HW" "IMU found at boot (1 = yes)" "$(echo "$st" | grep -c 'imu=ok')" 1
+    check_eq "HW" "optical sensor ok, or switched off (1 = yes)" "$(echo "$st" | grep -c -e 'opt=ok' -e 'opt=off')" 1
+    local mn mx v0 n; read -r mn mx v0 n <<< "$(joy_stats "$TMP/hw-log")"
+    check_range "HW" "joystick at rest: worst drift from centre, fraction of full tilt (deadzone 0.1)" \
+        "$(awk -v a="$mn" -v b="$mx" -v c="$v0" 'BEGIN { d = (c - a > b - c) ? c - a : b - c; printf "%.3f", d / 2048 }')" 0 0.099
+    local t; t="$(cat "$TMP/total" 2>/dev/null)"
+    check_range "HW" "IMU frame rate over 10 s [Hz]" "$(field "$t" rate_hz)" 199 201
+    check_eq "HW" "CRC errors" "$(field "$t" crc_errors)" 0
+    check_eq "HW" "frames lost" "$(field "$t" frames_lost)" 0
+    check_range "HW" "at rest: |a| = sqrt(ax^2+ay^2+az^2) [g]" \
+        "$(imu_awk "$TMP/hw" 'x += v["ax"]; y += v["ay"]; z += v["az"]' 'if (!n) { print "none"; exit } printf "%.3f", sqrt(x*x + y*y + z*z) / n / 16384')" 0.90 1.10
+    local a; for a in gx gy gz; do check_range "HW" "at rest: $a bias [deg/s]" "$(imu_mean "$TMP/hw" "$a")" -20 20; done
+    check_range "HW" "at rest: gz noise, standard deviation [deg/s]" \
+        "$(imu_awk "$TMP/hw" 's += v["gz"]; q += v["gz"] * v["gz"]' 'if (!n) { print "none"; exit } m = s / n; printf "%.3f", sqrt(q / n - m * m) / 131')" 0 1
+}
+
+# "@M dx dy" from the PC must come out of the USB mouse exactly, split into reports of at most 127.
+m7_l2() {
+    if ! ensure_fw HW; then fail "M7 L2" "board runs the HW firmware" "could not flash or find the Pico"; return; fi
+    evtest_ready "M7 L2" "cursor command reaches the USB mouse" || return
+    stdbuf -oL evtest --grab "$EVENT" > "$TMP/ev-move" 2>&1 & EVPID=$!   # --grab: the desktop pointer does not move
+    sleep 1
+    local c; for c in "M 10 0" "M 0 -10" "M 600 -450" "M -110 60" "M 1 1" "M 9999 0" "M -2000 0" "M 5" "M x y"; do send_cmd "$c"; sleep 0.3; done
+    sleep 0.5
+    kill "$EVPID" 2>/dev/null; wait "$EVPID" 2>/dev/null; EVPID=""
+    # 10 + 600 - 110 + 1 + 2000 (9999 clamped) - 2000 = 501 ;  -10 - 450 + 60 + 1 = -399 ; the last two are malformed
+    check_eq "M7 L2" "evtest: REL_X total of 7 good commands" "$(sum_rel REL_X all "$TMP/ev-move")" 501
+    check_eq "M7 L2" "evtest: REL_Y total of 7 good commands" "$(sum_rel REL_Y all "$TMP/ev-move")" -399
+    check_eq "M7 L2" "evtest: largest |REL_X| or |REL_Y| in one event" \
+        "$(awk '/\(REL_[XY]\), value/ { v = $NF + 0; if (v < 0) v = -v; if (v > m) m = v } END { print m + 0 }' "$TMP/ev-move")" 127
+}
+# The PC program's maths, on made-up IMU data with known answers.
+m7_motion() {
+    local out; out="$(make -s -C software_sandbox/DurHack test 2>&1)"
+    echo "$out" | grep -E '^(PASS|FAIL)' | while read -r st rest; do echo "$st  M7 L0  $rest"; done
+    check_eq "M7 L0" "motion maths: failed checks" "$(echo "$out" | grep -c '^FAIL')" 0
+    check_range "M7 L0" "motion maths: passed checks" "$(echo "$out" | grep -c '^PASS')" 140 400
+}
+
 not_built() { skip "$1" "$2" "not built until milestone $3"; }
 
 # ---------- what runs for each target ----------
@@ -535,12 +584,13 @@ run_milestone() {
         M4) l0 m4; m4_l2; m4_l3 ;;
         M5) l0 m5; m5_l1; m5_l2 ;;
         M6) m6_l5 ;;
+        M7) l0 m7; m7_motion; hw_auto; m7_l2 ;;
     esac
 }
 
 : > "$TMP/results"
 echo "=== ./bench/run.sh $TARGET ==="
-case "$TARGET" in L*) run_level "$TARGET" ;; M*) run_milestone "$TARGET" ;; esac
+case "$TARGET" in L*) run_level "$TARGET" ;; M*) run_milestone "$TARGET" ;; HW) hw_auto ;; esac
 
 VERDICT="ALL PASS"
 [ "$NSKIP" -gt 0 ] && VERDICT="NOT DONE ($NSKIP skipped)"

@@ -93,6 +93,10 @@ void sensors_optical_delta(int16_t *dx, int16_t *dy) {
     }
 }
 
+void sensors_imu_health(uint32_t *read_failures, uint32_t *zero_samples, uint32_t *recoveries) {
+    *read_failures = 0; *zero_samples = 0; *recoveries = 0; /* scripted data never fails */
+}
+
 void sensors_imu_raw(int16_t a[3], int16_t g[3]) {
     sim_imu_raw(s_now_us, a, g);
 }

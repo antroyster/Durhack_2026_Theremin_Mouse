@@ -200,3 +200,9 @@ Fault-injection rules for L1, so the counts are exact: a "bad CRC" fault flips o
 3. M0 tests, then milestone 1 with all of its tests passing → commit.
 
 After each milestone, LEARNING.md gets an entry on how its tests work and what each one proves.
+
+## Addendum (milestone 7): optical sensor off, IMU cursor
+
+- O1. `CFG_OPT_ENABLE` (firmware/config.h) switches the optical sensor. 0: its pins are not touched, the status line says `opt=off`, no LED code, HID x/y come only from O2.
+- O2. Host to device on the CDC port: `@M <dx> <dy>\n`, decimal, each clamped to ±2000. The counts are added to the same pending x/y as the optical sensor, so the ±127 clamp-and-carry applies. Malformed commands are ignored. This is not a change to protocol.h (which describes device-to-host packets).
+- O3. The PC program `software_sandbox/DurHack` computes orientation, table/air mode, cursor counts, height, note and gestures from the IMU stream. Its tuning numbers and their defaults are in `motion.hpp` (`struct Params`).

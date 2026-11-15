@@ -563,3 +563,133 @@ PASS  M6 L5  after soak: sum of |REL_X|                         measured=1000  l
 PASS  M6 L5  reflashes by 1200-baud reboot that succeeded (of 3) measured=3  limit=3
 SKIP  M6 L5  5 unplug/replugs reconnect within 2 s              measured=-  limit=needs your hands: run it in a terminal
 ```
+
+## 2026-11-15 01:22:43  git=5dc9f0a+dirty  ./bench/run.sh HW
+
+HW: 12 pass, 0 fail, 0 skip -> ALL PASS
+
+```
+PASS  HW     joystick found at boot (1 = yes)                   measured=1  limit=1
+PASS  HW     IMU found at boot (1 = yes)                        measured=1  limit=1
+PASS  HW     optical sensor ok, or switched off (1 = yes)       measured=1  limit=1
+PASS  HW     joystick at rest: worst drift from centre, fraction of full tilt (deadzone 0.1) measured=0.010  limit=0..0.099
+PASS  HW     IMU frame rate over 10 s [Hz]                      measured=199.99  limit=199..201
+PASS  HW     CRC errors                                         measured=0  limit=0
+PASS  HW     frames lost                                        measured=0  limit=0
+PASS  HW     at rest: |a| = sqrt(ax^2+ay^2+az^2) [g]            measured=0.928  limit=0.90..1.10
+PASS  HW     at rest: gx bias [deg/s]                           measured=3.992  limit=-20..20
+PASS  HW     at rest: gy bias [deg/s]                           measured=1.605  limit=-20..20
+PASS  HW     at rest: gz bias [deg/s]                           measured=-3.895  limit=-20..20
+PASS  HW     at rest: gz noise, standard deviation [deg/s]      measured=0.230  limit=0..1
+```
+
+## 2026-11-15 01:31:31  git=5dc9f0a+dirty  ./bench/run.sh M7
+
+M7: 30 pass, 0 fail, 0 skip -> ALL PASS
+
+```
+PASS  M7 L0 '@M 12 -3': commands                           measured=1  limit=1
+PASS  M7 L0 '@M 12 -3': dx                                 measured=12  limit=12
+PASS  M7 L0 '@M 12 -3': dy                                 measured=-3  limit=-3
+PASS  M7 L0 three commands back to back                    measured=3  limit=3
+PASS  M7 L0 three commands: dx total                       measured=-4  limit=-4
+PASS  M7 L0 three commands: dy total                       measured=8  limit=8
+PASS  M7 L0 over the limit is clamped: commands            measured=1  limit=1
+PASS  M7 L0 clamped dx                                     measured=2000  limit=2000
+PASS  M7 L0 clamped dy                                     measured=-2000  limit=-2000
+PASS  M7 L0 malformed commands are ignored                 measured=0  limit=0
+PASS  M7 L0 '@' restarts a half-finished command           measured=1  limit=1
+PASS  M7 L0 restart: dx                                    measured=2  limit=2
+PASS  M7 L0 restart: dy                                    measured=3  limit=3
+PASS  M7 L0  motion maths: failed checks                        measured=0  limit=0
+PASS  M7 L0  motion maths: passed checks                        measured=34  limit=30..99
+PASS  HW     joystick found at boot (1 = yes)                   measured=1  limit=1
+PASS  HW     IMU found at boot (1 = yes)                        measured=1  limit=1
+PASS  HW     optical sensor ok, or switched off (1 = yes)       measured=1  limit=1
+PASS  HW     joystick at rest: worst drift from centre, fraction of full tilt (deadzone 0.1) measured=0.008  limit=0..0.099
+PASS  HW     IMU frame rate over 10 s [Hz]                      measured=199.98  limit=199..201
+PASS  HW     CRC errors                                         measured=0  limit=0
+PASS  HW     frames lost                                        measured=0  limit=0
+PASS  HW     at rest: |a| = sqrt(ax^2+ay^2+az^2) [g]            measured=0.927  limit=0.90..1.10
+PASS  HW     at rest: gx bias [deg/s]                           measured=4.016  limit=-20..20
+PASS  HW     at rest: gy bias [deg/s]                           measured=1.739  limit=-20..20
+PASS  HW     at rest: gz bias [deg/s]                           measured=-3.887  limit=-20..20
+PASS  HW     at rest: gz noise, standard deviation [deg/s]      measured=0.066  limit=0..1
+PASS  M7 L2  evtest: REL_X total of 7 good commands             measured=501  limit=501
+PASS  M7 L2  evtest: REL_Y total of 7 good commands             measured=-399  limit=-399
+PASS  M7 L2  evtest: largest |REL_X| or |REL_Y| in one event    measured=127  limit=127
+```
+
+## 2026-11-15 01:38:18  git=5dc9f0a+dirty  ./bench/run.sh M7
+
+M7: 30 pass, 0 fail, 0 skip -> ALL PASS
+
+```
+PASS  M7 L0 '@M 12 -3': commands                           measured=1  limit=1
+PASS  M7 L0 '@M 12 -3': dx                                 measured=12  limit=12
+PASS  M7 L0 '@M 12 -3': dy                                 measured=-3  limit=-3
+PASS  M7 L0 three commands back to back                    measured=3  limit=3
+PASS  M7 L0 three commands: dx total                       measured=-4  limit=-4
+PASS  M7 L0 three commands: dy total                       measured=8  limit=8
+PASS  M7 L0 over the limit is clamped: commands            measured=1  limit=1
+PASS  M7 L0 clamped dx                                     measured=2000  limit=2000
+PASS  M7 L0 clamped dy                                     measured=-2000  limit=-2000
+PASS  M7 L0 malformed commands are ignored                 measured=0  limit=0
+PASS  M7 L0 '@' restarts a half-finished command           measured=1  limit=1
+PASS  M7 L0 restart: dx                                    measured=2  limit=2
+PASS  M7 L0 restart: dy                                    measured=3  limit=3
+PASS  M7 L0  motion maths: failed checks                        measured=0  limit=0
+PASS  M7 L0  motion maths: passed checks                        measured=34  limit=30..99
+PASS  HW     joystick found at boot (1 = yes)                   measured=1  limit=1
+PASS  HW     IMU found at boot (1 = yes)                        measured=1  limit=1
+PASS  HW     optical sensor ok, or switched off (1 = yes)       measured=1  limit=1
+PASS  HW     joystick at rest: worst drift from centre, fraction of full tilt (deadzone 0.1) measured=0.009  limit=0..0.099
+PASS  HW     IMU frame rate over 10 s [Hz]                      measured=200.25  limit=199..201
+PASS  HW     CRC errors                                         measured=0  limit=0
+PASS  HW     frames lost                                        measured=0  limit=0
+PASS  HW     at rest: |a| = sqrt(ax^2+ay^2+az^2) [g]            measured=0.916  limit=0.90..1.10
+PASS  HW     at rest: gx bias [deg/s]                           measured=4.031  limit=-20..20
+PASS  HW     at rest: gy bias [deg/s]                           measured=1.827  limit=-20..20
+PASS  HW     at rest: gz bias [deg/s]                           measured=-3.889  limit=-20..20
+PASS  HW     at rest: gz noise, standard deviation [deg/s]      measured=0.152  limit=0..1
+PASS  M7 L2  evtest: REL_X total of 7 good commands             measured=501  limit=501
+PASS  M7 L2  evtest: REL_Y total of 7 good commands             measured=-399  limit=-399
+PASS  M7 L2  evtest: largest |REL_X| or |REL_Y| in one event    measured=127  limit=127
+```
+
+## 2026-11-15 01:59:40  git=5dc9f0a+dirty  ./bench/run.sh M7
+
+M7: 28 pass, 2 fail, 0 skip -> FAILED
+
+```
+PASS  M7 L0 '@M 12 -3': commands                           measured=1  limit=1
+PASS  M7 L0 '@M 12 -3': dx                                 measured=12  limit=12
+PASS  M7 L0 '@M 12 -3': dy                                 measured=-3  limit=-3
+PASS  M7 L0 three commands back to back                    measured=3  limit=3
+PASS  M7 L0 three commands: dx total                       measured=-4  limit=-4
+PASS  M7 L0 three commands: dy total                       measured=8  limit=8
+PASS  M7 L0 over the limit is clamped: commands            measured=1  limit=1
+PASS  M7 L0 clamped dx                                     measured=2000  limit=2000
+PASS  M7 L0 clamped dy                                     measured=-2000  limit=-2000
+PASS  M7 L0 malformed commands are ignored                 measured=0  limit=0
+PASS  M7 L0 '@' restarts a half-finished command           measured=1  limit=1
+PASS  M7 L0 restart: dx                                    measured=2  limit=2
+PASS  M7 L0 restart: dy                                    measured=3  limit=3
+PASS  M7 L0  motion maths: failed checks                        measured=0  limit=0
+PASS  M7 L0  motion maths: passed checks                        measured=150  limit=140..400
+PASS  HW     joystick found at boot (1 = yes)                   measured=1  limit=1
+FAIL  HW     IMU found at boot (1 = yes)                        measured=0  limit=1
+PASS  HW     optical sensor ok, or switched off (1 = yes)       measured=1  limit=1
+PASS  HW     joystick at rest: worst drift from centre, fraction of full tilt (deadzone 0.1) measured=0.010  limit=0..0.099
+PASS  HW     IMU frame rate over 10 s [Hz]                      measured=199.97  limit=199..201
+PASS  HW     CRC errors                                         measured=0  limit=0
+PASS  HW     frames lost                                        measured=0  limit=0
+FAIL  HW     at rest: |a| = sqrt(ax^2+ay^2+az^2) [g]            measured=0.000  limit=0.90..1.10
+PASS  HW     at rest: gx bias [deg/s]                           measured=0.000  limit=-20..20
+PASS  HW     at rest: gy bias [deg/s]                           measured=0.000  limit=-20..20
+PASS  HW     at rest: gz bias [deg/s]                           measured=0.000  limit=-20..20
+PASS  HW     at rest: gz noise, standard deviation [deg/s]      measured=0.000  limit=0..1
+PASS  M7 L2  evtest: REL_X total of 7 good commands             measured=501  limit=501
+PASS  M7 L2  evtest: REL_Y total of 7 good commands             measured=-399  limit=-399
+PASS  M7 L2  evtest: largest |REL_X| or |REL_Y| in one event    measured=127  limit=127
+```

@@ -12,4 +12,7 @@ bool mpu6050_init(uint8_t *who);
  * cannot hang the tick interrupt. Returns false (and zeros) on a bus error. */
 bool mpu6050_read(int16_t a[3], int16_t g[3]);
 
+/* Wake the chip and write its settings again (recovery after it reset itself). */
+bool mpu6050_configure(void);
+
 #endif

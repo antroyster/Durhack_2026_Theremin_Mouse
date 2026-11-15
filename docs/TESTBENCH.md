@@ -271,3 +271,21 @@ Run everything from the repo root (`src/`). Each test prints PASS, FAIL or SKIP 
 - **If it fails:**
   1. One sensor reads `missing`: go back to its L3 card.
   2. The frame rate drops when the mouse moves: the tick is overloaded. Check the wiring length to the optical sensor and lower `CFG_OPT_SPI_BAUD` only if reads are failing.
+
+## HW: hands-free check of the real sensors
+
+- Run: `./bench/run.sh HW`, board lying still, joystick untouched. Takes 15 s.
+- Checks: joystick and IMU found at power-up; optical sensor ok or switched off; joystick rests inside the deadzone; 200 Hz ±0.5%, no CRC errors, no lost frames; |a| within 0.90 to 1.10 g; each gyro bias within ±20 °/s (datasheet); gz noise under 1 °/s.
+- If it fails: `joy`/`imu` not found: wiring, then replug. |a| far from 1 g: the board is being moved.
+
+## M7: optical switch, cursor command, motion maths
+
+- Run: `./bench/run.sh M7`. No hands needed; board lying still.
+- M7 L0 `test_m7`: the `@M dx dy` parser (good, clamped, malformed, restarted commands).
+- M7 L0 motion maths (`software_sandbox/DurHack/test_motion.cpp`): a fake IMU with the real board's noise and gyro bias. Tilt, bias, 90° turn, table strokes of 4.5 cm, a 25 cm lift, note number, two gestures recognised at another strength and after turning 120°, an unrecorded movement rejected, save/load.
+- HW: the card above.
+- M7 L2: with the pointer grabbed by evtest, nine `@M` commands are sent; the mouse must report exactly x = 501, y = −399 with no single event above 127.
+- If M7 L2 fails with totals of 0: the board is on old firmware (`./bench/flash.sh HW`), or another program has the serial port open.
+- Not covered by any automatic test: how well the cursor, height and gestures feel on the real device. Tune them in the program (USAGE.md section 13).
+- The status output now includes `imuhealth fail=<failed reads> zero=<all-zero samples> recover=<wake-up attempts>`; all three stay 0 on a healthy board. `imu=missing` in the hello line now reflects the present state, not only power-up: the firmware keeps retrying, so reseating a wire brings the IMU back without a replug.
+- Motion maths now runs every check under all three orientation filters (150 checks).
